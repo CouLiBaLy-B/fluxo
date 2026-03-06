@@ -1,0 +1,249 @@
+@import "tailwindcss";
+/* @tailwind base;
+@tailwind components;
+@tailwind utilities; */
+
+/* ── Base resets ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #F4F5F7;
+  color: #172B4D;
+}
+
+/* ── Scrollbars ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #C1C7D0; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #97A0AF; }
+
+/* ── Atlassian design system primitives ───────────────────── */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #0052CC;
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn-primary:hover { background: #0065FF; }
+.btn-primary:active { background: #0747A6; }
+.btn-primary:disabled { background: #B3BAC5; cursor: not-allowed; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #F4F5F7;
+  color: #172B4D;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-secondary:hover { background: #EBECF0; }
+.btn-secondary:active { background: #DFE1E6; }
+
+.btn-subtle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  color: #42526E;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-subtle:hover { background: #EBECF0; }
+
+.atl-input {
+  width: 100%;
+  background: #F4F5F7;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 14px;
+  color: #172B4D;
+  outline: none;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.atl-input::placeholder { color: #8993A4; }
+.atl-input:hover { background: #EBECF0; }
+.atl-input:focus { background: #ffffff; border-color: #0052CC; }
+
+.atl-select {
+  width: 100%;
+  background: #F4F5F7;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 14px;
+  color: #172B4D;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.atl-select:hover { background: #EBECF0; }
+.atl-select:focus { background: #ffffff; border-color: #0052CC; }
+
+/* ── Issue card ───────────────────────────────────────────── */
+.issue-card {
+  background: #ffffff;
+  border-radius: 4px;
+  border: 1px solid #DFE1E6;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  box-shadow: 0 1px 2px rgba(9,30,66,.08);
+}
+.issue-card:hover {
+  border-color: #0052CC;
+  box-shadow: 0 4px 12px rgba(9,30,66,.12);
+}
+
+/* ── Drag overlay ─────────────────────────────────────────── */
+.drag-overlay {
+  transform: rotate(2deg) scale(1.03) !important;
+  box-shadow: 0 20px 48px rgba(9,30,66,.28) !important;
+  border-color: #0052CC !important;
+}
+
+/* ── Confluence rendered page ─────────────────────────────── */
+.confluence-content h1 {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #172B4D;
+  margin: 0 0 1.5rem;
+  line-height: 1.2;
+}
+.confluence-content h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #172B4D;
+  margin: 2.5rem 0 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #DFE1E6;
+}
+.confluence-content h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #172B4D;
+  margin: 1.75rem 0 0.5rem;
+}
+.confluence-content h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #344563;
+  margin: 1.5rem 0 0.4rem;
+}
+.confluence-content p {
+  font-size: 0.9375rem;
+  color: #172B4D;
+  line-height: 1.75;
+  margin: 0 0 1rem;
+}
+.confluence-content strong { font-weight: 700; color: #172B4D; }
+.confluence-content em { font-style: italic; color: #344563; }
+.confluence-content del { text-decoration: line-through; color: #8993A4; }
+.confluence-content ul {
+  list-style: disc;
+  margin: 0.5rem 0 1rem 1.25rem;
+  padding: 0;
+}
+.confluence-content ol {
+  list-style: decimal;
+  margin: 0.5rem 0 1rem 1.25rem;
+  padding: 0;
+}
+.confluence-content li {
+  font-size: 0.9375rem;
+  color: #172B4D;
+  line-height: 1.7;
+  margin-bottom: 0.3rem;
+}
+.confluence-content code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.82rem;
+  background: #F4F5F7;
+  color: #BF2600;
+  border-radius: 3px;
+  padding: 0.12em 0.42em;
+}
+.confluence-content pre {
+  background: #172B4D;
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  margin: 1.25rem 0;
+  overflow-x: auto;
+}
+.confluence-content pre code {
+  background: none;
+  color: #C1F0C8;
+  font-size: 0.8125rem;
+  padding: 0;
+  border-radius: 0;
+}
+.confluence-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+  border: 1px solid #DFE1E6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.confluence-content th {
+  background: #F4F5F7;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-align: left;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 2px solid #DFE1E6;
+  color: #172B4D;
+}
+.confluence-content td {
+  font-size: 0.875rem;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid #DFE1E6;
+  color: #172B4D;
+  vertical-align: top;
+}
+.confluence-content tr:last-child td { border-bottom: none; }
+.confluence-content tr:hover td { background: #F4F5F7; }
+.confluence-content hr {
+  border: none;
+  border-top: 2px solid #DFE1E6;
+  margin: 2rem 0;
+}
+.confluence-content br { display: block; height: 0.25rem; }
+.confluence-content a {
+  color: #0052CC;
+  text-decoration: none;
+  font-weight: 500;
+}
+.confluence-content a:hover { text-decoration: underline; }

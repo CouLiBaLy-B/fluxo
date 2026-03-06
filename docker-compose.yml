@@ -1,0 +1,119 @@
+# ─── Atlassian Clone — Docker Compose ──────────────────────────────────────────
+# Usage:
+#   docker compose up --build          # démarrage complet avec rebuild
+#   docker compose down -v             # arrêt + suppression volumes
+#   docker compose logs -f backend     # suivre les logs du backend
+#   docker compose ps                  # état des services
+
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: atlassian_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:?POSTGRES_DB manquant dans .env}
+      POSTGRES_USER:     ${POSTGRES_USER:?POSTGRES_USER manquant dans .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Schéma initialisé automatiquement au premier démarrage
+      - ./backend/src/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # Port NON exposé à l'hôte — DB accessible uniquement via le réseau interne
+    # Pour déboguer : docker exec -it atlassian_db psql -U atlassian
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - atlassian_net
+    # Limites ressources
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    # Logs limités pour éviter de remplir le disque
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Node.js REST API ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: atlassian_api
+    restart: unless-stopped
+    environment:
+      NODE_ENV:     production
+      PORT:         4000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET:   ${JWT_SECRET:?JWT_SECRET manquant dans .env}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      # Origines autorisées pour CORS (séparées par virgule)
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Port NON exposé à l'hôte — API accessible uniquement via le proxy Nginx
+    # Pour tester : docker exec -it atlassian_api node -e "require('http').get('http://localhost:4000/health',(r)=>console.log(r.statusCode))"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - atlassian_net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── React Frontend served by Nginx ────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlassian_web
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - atlassian_net
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  atlassian_net:
+    driver: bridge

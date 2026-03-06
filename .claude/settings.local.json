@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\")",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(docker compose up --build)",
+      "Bash(curl -s http://localhost/api/health)",
+      "Bash(curl -s -X POST http://localhost/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"email\"\":\"\"admin@example.com\"\",\"\"password\"\":\"\"admin123456\"\"}')",
+      "Bash(curl -s -X POST http://localhost/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"email\"\":\"\"incompris@example.com\"\",\"\"password\"\":\"\"Mot2Pass\"\"}')",
+      "Bash(docker exec atlassian_db psql -U atlassian_user -d atlassian_db -c \"SELECT email, role, length\\(password_hash\\) as hash_len FROM users;\")",
+      "Bash(docker exec atlassian_db psql -U postgres -d atlassian_db -c \"SELECT email, role, length\\(password_hash\\) as hash_len FROM users;\")",
+      "Bash(docker exec atlassian_db psql -U atlassian -d atlassian_db -c \"SELECT email, role, length\\(password_hash\\) as hash_len FROM users;\")",
+      "Bash(docker exec atlassian_db psql -U atlassian -d atlassian -c \"SELECT email, role, length\\(password_hash\\) as hash_len FROM users;\")",
+      "Bash(curl -s -X POST http://localhost/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"email\"\":\"\"alice@example.com\"\",\"\"password\"\":\"\"password123\"\"}')",
+      "Bash(node -e \"const bcrypt = require\\(''c:/Users/bourahima.coulibaly/Desktop/codebase/confluence-jira-drag-drop/node_modules/bcryptjs''\\); bcrypt.compare\\(''password123'', ''$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6o8bwP1Jmu''\\).then\\(r => console.log\\(''match:'', r\\)\\).catch\\(e => console.error\\(e\\)\\);\")",
+      "Bash(docker exec atlassian_api node -e \"const bcrypt = require\\(''bcryptjs''\\); bcrypt.compare\\(''password123'', ''$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6o8bwP1Jmu''\\).then\\(r => console.log\\(''match:'', r\\)\\).catch\\(e => console.error\\(e\\)\\);\")",
+      "Bash(docker exec atlassian_api node -e \"const bcrypt = require\\(''bcryptjs''\\); bcrypt.hash\\(''password123'', 12\\).then\\(h => console.log\\(h\\)\\);\")",
+      "Bash(docker compose down -v)",
+      "Bash(docker exec atlassian_db psql -U atlassian -d atlassian -c \"SELECT id, emoji FROM confluence_pages WHERE title=''Test Page'';\")",
+      "Bash(docker exec atlassian_db psql -U atlassian -d atlassian -c \"SELECT emoji FROM confluence_spaces;\")",
+      "Bash(docker exec atlassian_db psql -U atlassian -d atlassian -c \"SHOW server_encoding;\")"
+    ]
+  }
+}
