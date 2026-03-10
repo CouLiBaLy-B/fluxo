@@ -4,56 +4,312 @@ import { api } from '../../api/client';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type LLMProvider = 'mock' | 'openai' | 'anthropic' | 'ollama';
+type LLMProvider =
+  | 'mock'
+  | 'openai'
+  | 'anthropic'
+  | 'ollama'
+  | 'gemini'
+  | 'mistral'
+  | 'cohere'
+  | 'groq'
+  | 'azure-openai'
+  | 'huggingface';
 
-const PROVIDER_LABELS: Record<LLMProvider, string> = {
-  mock:      'Mock (développement, sans clé API)',
-  openai:    'OpenAI (GPT-4o, GPT-4o-mini…)',
-  anthropic: 'Anthropic (Claude Sonnet, Haiku…)',
-  ollama:    'Ollama (modèle local, sans coût)',
+interface ProviderInfo {
+  label:    string;
+  icon:     string;
+  envKeys:  string[];
+  docsUrl:  string;
+}
+
+interface LLMConfig {
+  provider:           LLMProvider;
+  model:              string;
+  availableProviders: LLMProvider[];
+  defaultModels:      Record<LLMProvider, string>;
+  suggestedModels:    Record<LLMProvider, string[]>;
+  providers: Array<{
+    id:              LLMProvider;
+    active:          boolean;
+    configured:      boolean;
+    envStatus:       Record<string, boolean>;
+    defaultModel:    string;
+    suggestedModels: string[];
+  }>;
+  // Raccourcis rétro-compatibles
+  hasOpenAIKey:      boolean;
+  hasAnthropicKey:   boolean;
+  hasGeminiKey:      boolean;
+  hasMistralKey:     boolean;
+  hasCohereKey:      boolean;
+  hasGroqKey:        boolean;
+  hasAzureOpenAIKey: boolean;
+  hasHuggingFaceKey: boolean;
+}
+
+interface TestResult {
+  success:    boolean;
+  provider:   string;
+  model:      string;
+  durationMs: number;
+  tokensUsed?: number;
+  response?:   string;
+  error?:      string;
+}
+
+// ── Métadonnées des providers ─────────────────────────────────────────────────
+
+const PROVIDER_INFO: Record<LLMProvider, ProviderInfo> = {
+  mock: {
+    label:   'Mock — développement sans clé API',
+    icon:    '🎭',
+    envKeys: [],
+    docsUrl: '',
+  },
+  openai: {
+    label:   'OpenAI — GPT-4o, GPT-4o-mini, o3…',
+    icon:    '🟢',
+    envKeys: ['OPENAI_API_KEY'],
+    docsUrl: 'https://platform.openai.com/api-keys',
+  },
+  anthropic: {
+    label:   'Anthropic — Claude Opus, Sonnet, Haiku…',
+    icon:    '🟣',
+    envKeys: ['ANTHROPIC_API_KEY'],
+    docsUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  ollama: {
+    label:   'Ollama — modèles locaux, zéro coût',
+    icon:    '🦙',
+    envKeys: [],
+    docsUrl: 'https://ollama.com',
+  },
+  gemini: {
+    label:   'Google Gemini — Flash, Pro…',
+    icon:    '♊',
+    envKeys: ['GEMINI_API_KEY'],
+    docsUrl: 'https://aistudio.google.com/app/apikey',
+  },
+  mistral: {
+    label:   'Mistral AI — Large, Small, Codestral…',
+    icon:    '🌬️',
+    envKeys: ['MISTRAL_API_KEY'],
+    docsUrl: 'https://console.mistral.ai/api-keys',
+  },
+  cohere: {
+    label:   'Cohere — Command R, Command R+…',
+    icon:    '🔵',
+    envKeys: ['COHERE_API_KEY'],
+    docsUrl: 'https://dashboard.cohere.com/api-keys',
+  },
+  groq: {
+    label:   'Groq — Llama 3, Mixtral (ultra-rapide)',
+    icon:    '⚡',
+    envKeys: ['GROQ_API_KEY'],
+    docsUrl: 'https://console.groq.com/keys',
+  },
+  'azure-openai': {
+    label:   'Azure OpenAI — GPT-4o sur Azure',
+    icon:    '☁️',
+    envKeys: ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT'],
+    docsUrl: 'https://portal.azure.com',
+  },
+  huggingface: {
+    label:   'Hugging Face — Inference API & Endpoints',
+    icon:    '🤗',
+    envKeys: ['HF_API_KEY'],
+    docsUrl: 'https://huggingface.co/settings/tokens',
+  },
 };
 
-const PROVIDER_ICONS: Record<LLMProvider, string> = {
-  mock:      '🎭',
-  openai:    '🟢',
-  anthropic: '🟣',
-  ollama:    '🦙',
-};
+// ── Sous-composants ───────────────────────────────────────────────────────────
+
+/** Badge coloré selon le statut du provider */
+function StatusBadge({ configured, active }: { configured: boolean; active: boolean }) {
+  if (active) {
+    return (
+      <span className="px-1.5 py-0.5 bg-[#0052CC] text-white rounded text-[10px] font-bold">
+        ACTIF
+      </span>
+    );
+  }
+  if (configured) {
+    return (
+      <span className="px-1.5 py-0.5 bg-[#E3FCEF] text-[#006644] rounded text-[10px] font-semibold">
+        PRÊT
+      </span>
+    );
+  }
+  return (
+    <span className="px-1.5 py-0.5 bg-[#DFE1E6] text-[#42526E] rounded text-[10px] font-semibold">
+      NON CONFIGURÉ
+    </span>
+  );
+}
+
+/** Liste des variables d'environnement manquantes */
+function MissingKeysWarning({
+  provider,
+  envStatus,
+}: {
+  provider:  LLMProvider;
+  envStatus: Record<string, boolean>;
+}) {
+  const info    = PROVIDER_INFO[provider];
+  const missing = info.envKeys.filter(k => !envStatus[k]);
+
+  if (missing.length === 0 || provider === 'mock' || provider === 'ollama') {
+    return null;
+  }
+
+  return (
+    <div className="flex items-start gap-2 px-3 py-2.5 bg-[#FFFAE6] border border-[#F5C518] rounded-lg text-[12px] text-[#7A5B00]">
+      {/* Icône warning */}
+      <svg
+        width="14" height="14" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        className="mt-0.5 flex-shrink-0"
+      >
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span>
+        Variable{missing.length > 1 ? 's' : ''} manquante{missing.length > 1 ? 's' : ''} :{' '}
+        {missing.map((k, i) => (
+          <span key={k}>
+            <code className="bg-[#FFF0B3] px-1 rounded">{k}</code>
+            {i < missing.length - 1 && ', '}
+          </span>
+        ))}
+        {info.docsUrl && (
+          <>
+            {' — '}
+            <a
+              href={info.docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-[#5A4000]"
+            >
+              Obtenir une clé
+            </a>
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** Résultat du test de connectivité */
+function TestResultBanner({ result }: { result: TestResult }) {
+  if (result.success) {
+    return (
+      <div className="flex items-start gap-2 px-3 py-2.5 bg-[#E3FCEF] border border-[#79F2C0] rounded-lg text-[12px] text-[#006644]">
+        <span className="font-bold mt-0.5">✓</span>
+        <div>
+          <div className="font-semibold">Connexion réussie</div>
+          <div className="text-[11px] mt-0.5 text-[#006644]/80">
+            Modèle : <strong>{result.model}</strong> ·{' '}
+            {result.durationMs}ms · {result.tokensUsed} tokens
+          </div>
+          {result.response && (
+            <div className="mt-1 font-mono text-[11px] bg-[#FFFFFF]/60 px-2 py-1 rounded">
+              {result.response}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2 px-3 py-2.5 bg-[#FFEBE6] border border-[#FF8F73] rounded-lg text-[12px] text-[#BF2600]">
+      <span className="font-bold mt-0.5">✗</span>
+      <div>
+        <div className="font-semibold">Échec de la connexion</div>
+        <div className="text-[11px] mt-0.5 font-mono break-all">{result.error}</div>
+      </div>
+    </div>
+  );
+}
 
 // ── Composant principal ───────────────────────────────────────────────────────
 
 export function LLMProviderSettings() {
   const queryClient = useQueryClient();
 
-  const { data: config, isLoading } = useQuery({
-    queryKey: ['admin', 'llm-config'],
-    queryFn: () => api.admin.getLLMConfig(),
-  });
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [provider,    setProvider]    = useState<LLMProvider>('mock');
+  const [model,       setModel]       = useState('mock-v1');
+  const [toast,       setToast]       = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [testResult,  setTestResult]  = useState<TestResult | null>(null);
+  const [isTesting,   setIsTesting]   = useState(false);
+  const [showModels,  setShowModels]  = useState(false);
 
-  const [provider, setProvider] = useState<LLMProvider>('mock');
-  const [model, setModel]       = useState('mock');
-  const [toast, setToast]       = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  // ── Data fetching ──────────────────────────────────────────────────────────
+  const { data: config, isLoading } = useQuery<LLMConfig>({
+    queryKey: ['admin', 'llm-config'],
+    queryFn:  () => api.admin.getLLMConfig(),
+  });
 
   // Synchroniser les champs quand la config est chargée
   useEffect(() => {
     if (config) {
-      setProvider(config.provider as LLMProvider);
+      setProvider(config.provider);
       setModel(config.model);
     }
   }, [config]);
 
-  // Pré-remplir le modèle par défaut quand le provider change
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  /** Pré-remplit le modèle par défaut quand le provider change */
   const handleProviderChange = (p: LLMProvider) => {
     setProvider(p);
-    setModel(config?.defaultModels[p] ?? p);
+    setModel(config?.defaultModels[p] ?? 'mock-v1');
+    setTestResult(null);
+    setShowModels(false);
   };
 
+  /** Sélectionne un modèle suggéré */
+  const handleSelectSuggested = (m: string) => {
+    setModel(m);
+    setShowModels(false);
+  };
+
+  /** Test de connectivité du provider actif en DB */
+  const handleTest = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.admin.testLLMConfig() as TestResult;
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({
+        success:    false,
+        provider,
+        model,
+        durationMs: 0,
+        error:      (err as Error).message,
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // ── Mutation de sauvegarde ─────────────────────────────────────────────────
   const mutation = useMutation({
     mutationFn: () => api.admin.updateLLMConfig({ provider, model }),
-    onSuccess: (data) => {
+    onSuccess: (data: { provider: string; model: string; warnings?: string[] }) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'llm-config'] });
-      setToast({ type: 'success', msg: `Provider mis à jour : ${data.provider} / ${data.model}` });
-      setTimeout(() => setToast(null), 3000);
+      setTestResult(null);
+
+      const msg = data.warnings?.length
+        ? `Sauvegardé avec avertissements : ${data.warnings[0]}`
+        : `Provider mis à jour : ${data.provider} / ${data.model}`;
+
+      setToast({ type: data.warnings?.length ? 'error' : 'success', msg });
+      setTimeout(() => setToast(null), 4000);
     },
     onError: (err) => {
       setToast({ type: 'error', msg: (err as Error).message });
@@ -61,123 +317,265 @@ export function LLMProviderSettings() {
     },
   });
 
-  const needsKey = (provider === 'openai' && !config?.hasOpenAIKey)
-                || (provider === 'anthropic' && !config?.hasAnthropicKey);
+  // ── Données dérivées ───────────────────────────────────────────────────────
+
+  const currentProviderMeta = config?.providers?.find(p => p.id === provider);
+  const suggestedModels     = config?.suggestedModels?.[provider] ?? [];
+  const envStatus           = currentProviderMeta?.envStatus ?? {};
+  const isConfigured        = currentProviderMeta?.configured ?? true;
+
+  // ── Rendu conditionnel : chargement ───────────────────────────────────────
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-32 text-[#42526E] text-sm">
+        <svg className="animate-spin w-5 h-5 mr-2" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"
+            strokeDasharray="32" strokeDashoffset="12"/>
+        </svg>
         Chargement…
       </div>
     );
   }
 
-  return (
-    <div className="max-w-xl">
-      <h2 className="text-[18px] font-bold text-[#172B4D] mb-1">Provider LLM</h2>
-      <p className="text-[13px] text-[#42526E] mb-6">
-        Choisissez le fournisseur de modèle de langage utilisé par les agents AI.
-        Les clés API se configurent dans le fichier <code className="bg-[#F4F5F7] px-1 rounded">.env</code>.
-      </p>
+  // ── Rendu principal ────────────────────────────────────────────────────────
 
-      {/* Provider selector */}
-      <div className="mb-4">
+  return (
+    <div className="max-w-xl space-y-6">
+
+      {/* En-tête */}
+      <div>
+        <h2 className="text-[18px] font-bold text-[#172B4D] mb-1">Provider LLM</h2>
+        <p className="text-[13px] text-[#42526E]">
+          Choisissez le fournisseur de modèle utilisé par les agents AI.
+          Les clés API se configurent dans{' '}
+          <code className="bg-[#F4F5F7] px-1 rounded">.env</code> et prennent effet
+          après redémarrage du conteneur.
+        </p>
+      </div>
+
+      {/* Sélecteur de provider */}
+      <div>
         <label className="block text-[12px] font-semibold text-[#172B4D] uppercase tracking-wide mb-2">
           Fournisseur
         </label>
         <div className="grid gap-2">
-          {(['mock', 'openai', 'anthropic', 'ollama'] as LLMProvider[]).map(p => (
-            <button
-              key={p}
-              onClick={() => handleProviderChange(p)}
-              className={[
-                'flex items-center gap-3 px-4 py-3 rounded-lg border-2 text-left transition-all',
-                provider === p
-                  ? 'border-[#0052CC] bg-[#E6EFFF]'
-                  : 'border-[#DFE1E6] bg-white hover:border-[#0052CC]/40',
-              ].join(' ')}
-            >
-              <span className="text-[18px]">{PROVIDER_ICONS[p]}</span>
-              <div className="flex-1">
-                <div className="text-[13px] font-semibold text-[#172B4D]">{p.toUpperCase()}</div>
-                <div className="text-[12px] text-[#42526E]">{PROVIDER_LABELS[p]}</div>
-              </div>
-              {provider === p && (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0052CC" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-              )}
-            </button>
-          ))}
+          {(Object.keys(PROVIDER_INFO) as LLMProvider[]).map(p => {
+            const meta       = config?.providers?.find(x => x.id === p);
+            const isSelected = provider === p;
+            const configured = meta?.configured ?? (p === 'mock' || p === 'ollama');
+
+            return (
+              <button
+                key={p}
+                onClick={() => handleProviderChange(p)}
+                className={[
+                  'flex items-center gap-3 px-4 py-3 rounded-lg border-2 text-left transition-all',
+                  isSelected
+                    ? 'border-[#0052CC] bg-[#E6EFFF]'
+                    : 'border-[#DFE1E6] bg-white hover:border-[#0052CC]/40',
+                ].join(' ')}
+              >
+                {/* Icône */}
+                <span className="text-[20px] leading-none w-7 text-center flex-shrink-0">
+                  {PROVIDER_INFO[p].icon}
+                </span>
+
+                {/* Infos */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-semibold text-[#172B4D]">
+                      {p.toUpperCase()}
+                    </span>
+                    <StatusBadge
+                      configured={configured}
+                      active={config?.provider === p}
+                    />
+                  </div>
+                  <div className="text-[12px] text-[#42526E] truncate">
+                    {PROVIDER_INFO[p].label}
+                  </div>
+                </div>
+
+                {/* Checkmark si sélectionné */}
+                {isSelected && (
+                  <svg
+                    width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="#0052CC" strokeWidth="2.5"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    className="flex-shrink-0"
+                  >
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Model field */}
-      <div className="mb-4">
+      {/* Champ modèle + suggestions */}
+      <div>
         <label className="block text-[12px] font-semibold text-[#172B4D] uppercase tracking-wide mb-1.5">
           Modèle
         </label>
-        <input
-          type="text"
-          value={model}
-          onChange={e => setModel(e.target.value)}
-          placeholder="ex: gpt-4o-mini"
-          className="w-full px-3 py-2 border border-[#DFE1E6] rounded-lg text-[13px] text-[#172B4D] focus:outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
-        />
-        <p className="mt-1 text-[11px] text-[#6B778C]">
-          Doit correspondre au nom exact du modèle chez le provider.
-        </p>
+
+        <div className="relative">
+          <input
+            type="text"
+            value={model}
+            onChange={e => setModel(e.target.value)}
+            onFocus={() => suggestedModels.length > 0 && setShowModels(true)}
+            placeholder={`ex: ${config?.defaultModels[provider] ?? 'model-name'}`}
+            className="w-full px-3 py-2 border border-[#DFE1E6] rounded-lg text-[13px] text-[#172B4D]
+                       focus:outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
+          />
+
+          {/* Dropdown des modèles suggérés */}
+          {showModels && suggestedModels.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full bg-white border border-[#DFE1E6] rounded-lg shadow-lg overflow-hidden">
+              <div className="px-3 py-1.5 bg-[#F4F5F7] text-[11px] font-semibold text-[#42526E] uppercase tracking-wide">
+                Modèles suggérés
+              </div>
+              {suggestedModels.map(m => (
+                <button
+                  key={m}
+                  onClick={() => handleSelectSuggested(m)}
+                  className={[
+                    'w-full text-left px-3 py-2 text-[13px] hover:bg-[#F4F5F7] transition-colors',
+                    m === model ? 'text-[#0052CC] font-semibold' : 'text-[#172B4D]',
+                  ].join(' ')}
+                >
+                  {m}
+                  {m === config?.defaultModels[provider] && (
+                    <span className="ml-2 text-[10px] text-[#42526E]">(défaut)</span>
+                  )}
+                </button>
+              ))}
+              <button
+                onClick={() => setShowModels(false)}
+                className="w-full text-left px-3 py-2 text-[12px] text-[#42526E] hover:bg-[#F4F5F7] border-t border-[#DFE1E6]"
+              >
+                Fermer
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-1 flex items-center justify-between">
+          <p className="text-[11px] text-[#6B778C]">
+            Doit correspondre au nom exact du modèle chez le provider.
+          </p>
+          {suggestedModels.length > 0 && (
+            <button
+              onClick={() => setShowModels(v => !v)}
+              className="text-[11px] text-[#0052CC] hover:underline"
+            >
+              Voir les suggestions
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Missing API key warning */}
-      {needsKey && (
-        <div className="flex items-start gap-2 px-3 py-2.5 bg-[#FFFAE6] border border-[#F5C518] rounded-lg mb-4 text-[12px] text-[#7A5B00]">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0">
-            <triangle points="10.29 3.86 1.82 18 22.18 18"/>
-            <path d="M12 9v4M12 17h.01"/>
-          </svg>
-          <span>
-            Clé API manquante pour <strong>{provider}</strong>.
-            Ajoutez <code className="bg-[#FFF0B3] px-1 rounded">{provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'}</code> dans votre fichier <code className="bg-[#FFF0B3] px-1 rounded">.env</code> et redémarrez le conteneur.
-          </span>
-        </div>
+      {/* Avertissement clés manquantes */}
+      {!isConfigured && (
+        <MissingKeysWarning provider={provider} envStatus={envStatus} />
       )}
 
-      {/* Save button */}
-      <button
-        onClick={() => mutation.mutate()}
-        disabled={mutation.isPending}
-        className="flex items-center gap-2 px-5 py-2.5 bg-[#0052CC] hover:bg-[#0065FF] disabled:opacity-60 text-white text-[13px] font-semibold rounded-lg transition-colors"
-      >
-        {mutation.isPending ? (
-          <>
-            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12"/>
-            </svg>
-            Enregistrement…
-          </>
-        ) : 'Enregistrer'}
-      </button>
+      {/* Résultat du test */}
+      {testResult && <TestResultBanner result={testResult} />}
+
+      {/* Actions */}
+      <div className="flex items-center gap-3">
+        {/* Bouton sauvegarder */}
+        <button
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending}
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#0052CC] hover:bg-[#0065FF]
+                     disabled:opacity-60 text-white text-[13px] font-semibold
+                     rounded-lg transition-colors"
+        >
+          {mutation.isPending ? (
+            <>
+              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"
+                  strokeDasharray="32" strokeDashoffset="12"/>
+              </svg>
+              Enregistrement…
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+              Enregistrer
+            </>
+          )}
+        </button>
+
+        {/* Bouton tester la connexion */}
+        <button
+          onClick={handleTest}
+          disabled={isTesting}
+          className="flex items-center gap-2 px-4 py-2.5 border border-[#DFE1E6]
+                     hover:border-[#0052CC] hover:text-[#0052CC] disabled:opacity-60
+                     text-[#42526E] text-[13px] font-semibold rounded-lg transition-colors"
+        >
+          {isTesting ? (
+            <>
+              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"
+                  strokeDasharray="32" strokeDashoffset="12"/>
+              </svg>
+              Test en cours…
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              Tester la connexion
+            </>
+          )}
+        </button>
+      </div>
 
       {/* Toast */}
       {toast && (
         <div className={[
-          'mt-4 flex items-center gap-2 px-3 py-2.5 rounded-lg text-[13px] font-medium',
+          'flex items-center gap-2 px-3 py-2.5 rounded-lg text-[13px] font-medium',
           toast.type === 'success'
             ? 'bg-[#E3FCEF] text-[#006644]'
-            : 'bg-[#FFEBE6] text-[#BF2600]',
+            : 'bg-[#FFFAE6] text-[#7A5B00]',
         ].join(' ')}>
-          {toast.type === 'success' ? '✓' : '✗'} {toast.msg}
+          {toast.type === 'success' ? '✓' : '⚠'} {toast.msg}
         </div>
       )}
 
-      {/* Current active config */}
+      {/* Config active en DB */}
       {config && (
-        <div className="mt-6 pt-4 border-t border-[#DFE1E6]">
-          <p className="text-[11px] text-[#6B778C]">
-            Config active : <strong>{config.provider}</strong> / <strong>{config.model}</strong>
+        <div className="pt-4 border-t border-[#DFE1E6]">
+          <p className="text-[11px] text-[#6B778C] flex items-center gap-2 flex-wrap">
+            <span>
+              Config active en DB :
+              <strong className="text-[#172B4D] ml-1">{config.provider}</strong>
+              {' / '}
+              <strong className="text-[#172B4D]">{config.model}</strong>
+            </span>
             {config.provider === 'mock' && (
-              <span className="ml-2 px-1.5 py-0.5 bg-[#DFE1E6] text-[#42526E] rounded text-[10px] font-semibold">MODE MOCK</span>
+              <span className="px-1.5 py-0.5 bg-[#DFE1E6] text-[#42526E] rounded text-[10px] font-semibold">
+                MODE MOCK
+              </span>
+            )}
+            {config.provider === 'ollama' && (
+              <span className="px-1.5 py-0.5 bg-[#E3FCEF] text-[#006644] rounded text-[10px] font-semibold">
+                LOCAL
+              </span>
             )}
           </p>
         </div>

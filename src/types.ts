@@ -89,7 +89,12 @@ export interface JiraIssue {
   updatedAt: string;
   // AI agent fields (populated by backend when assigned)
   assignedAgentId?: string | null;
+  assignedAgent?: AIAgent | null;
+  aiInstructions?: string | null;
   aiProgress?: number;
+  aiSummary?: string | null;
+  confluencePageId?: string | null;
+  activeTask?: AITaskQueue | null;
 }
 
 // Payload pour créer/modifier une issue

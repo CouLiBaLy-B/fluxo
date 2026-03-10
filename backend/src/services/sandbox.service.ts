@@ -595,6 +595,21 @@ class SandboxService {
 
     return { fileTree, fileContents, totalSizeBytes };
   }
+
+  /**
+   * Vérifie si le sandbox est disponible (alias de healthCheck).
+   */
+  async isAvailable(): Promise<boolean> {
+    return this.healthCheck();
+  }
+
+  /**
+   * Retourne la stratégie d'exécution utilisée par ce service.
+   * Ce service utilise Docker exec sur le conteneur atlassian_sandbox.
+   */
+  getStrategy(): 'docker' | 'worker' | 'mock' {
+    return 'docker';
+  }
 }
 
 // ── Export singleton ──────────────────────────────────────────────────────────

@@ -325,6 +325,20 @@ router.post('/issues/:id/pause-agent',
   }
 );
 
+// ── POST /api/issues/:id/resume-agent — Reprendre après pause ────────────────
+
+router.post('/issues/:id/resume-agent',
+  param('id').isString().notEmpty(),
+  validate,
+  async (req: Request, res: Response) => {
+    const task = await queueService.getTaskByIssueId(req.params['id']!);
+    if (!task) throw new AppError(404, 'Aucune tâche pour cette issue');
+    if (task.status !== 'paused') throw new AppError(400, 'La tâche n\'est pas en pause');
+    await queueService.resume(task.id);
+    res.json({ message: 'Agent repris' });
+  }
+);
+
 // ── POST /api/issues/:id/retry-agent — Relancer après échec ──────────────────
 
 router.post('/issues/:id/retry-agent',

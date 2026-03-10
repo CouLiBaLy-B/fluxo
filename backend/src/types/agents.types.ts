@@ -163,7 +163,17 @@ export interface OrchestratorConfig {
 
 // ── Config LLM ────────────────────────────────────────────────────────────────
 
-export type LLMProvider = 'openai' | 'anthropic' | 'ollama' | 'mock';
+export type LLMProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'ollama'
+  | 'gemini'
+  | 'mistral'
+  | 'cohere'
+  | 'groq'
+  | 'huggingface'
+  | 'azure-openai'
+  | 'mock';
 
 export interface LLMConfig {
   provider: LLMProvider;

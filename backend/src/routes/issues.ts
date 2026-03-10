@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errorHandler';
 import { requireAuth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import logger from '../logger';
+import { emitIssueCreated, emitIssueUpdated } from '../events/issue.events';
 
 const router = Router();
 
@@ -36,6 +37,12 @@ interface IssueRow {
   comments: unknown[];
   created_at: Date;
   updated_at: Date;
+  // Champs AI
+  assigned_agent_id: string | null;
+  ai_instructions: string | null;
+  ai_progress: number;
+  ai_summary: string | null;
+  confluence_page_id: string | null;
 }
 
 function formatIssue(row: IssueRow) {
@@ -62,6 +69,11 @@ function formatIssue(row: IssueRow) {
     comments: row.comments ?? [],
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+    assignedAgentId: row.assigned_agent_id ?? null,
+    aiInstructions: row.ai_instructions ?? null,
+    aiProgress: row.ai_progress ?? 0,
+    aiSummary: row.ai_summary ?? null,
+    confluencePageId: row.confluence_page_id ?? null,
   };
 }
 
@@ -71,6 +83,7 @@ const ISSUE_WITH_COMMENTS_QUERY = `
     i.id, i.key, i.project_id, i.sprint_id, i.type, i.title, i.description,
     i.priority, i.status, i.assignee_id, i.reporter_id, i.story_points,
     i.labels, i.epic_key, i.board_order, i.created_at, i.updated_at,
+    i.assigned_agent_id, i.ai_instructions, i.ai_progress, i.ai_summary, i.confluence_page_id,
     ua.name AS assignee_name, ua.avatar AS assignee_avatar, ua.color AS assignee_color,
     ur.name AS reporter_name,
     COALESCE(
@@ -172,11 +185,13 @@ router.post(
         projectId, sprintId, type = 'task', title, description = '',
         priority = 'medium', status = 'todo', assigneeId, reporterId,
         storyPoints = 0, labels = [], epicKey,
+        assignedAgentId, aiInstructions, autoStart = false,
       } = req.body as {
         projectId: string; sprintId?: string; type?: string;
         title: string; description?: string; priority?: string; status?: string;
         assigneeId?: string; reporterId?: string; storyPoints?: number;
         labels?: string[]; epicKey?: string;
+        assignedAgentId?: string; aiInstructions?: string; autoStart?: boolean;
       };
 
       // Vérifier que le projet existe et récupérer sa clé pour générer la clé d'issue
@@ -199,18 +214,32 @@ router.post(
       const { rows } = await pool.query<IssueRow>(
         `INSERT INTO issues
            (key, project_id, sprint_id, type, title, description, priority, status,
-            assignee_id, reporter_id, story_points, labels, epic_key, board_order)
+            assignee_id, reporter_id, story_points, labels, epic_key, board_order,
+            assigned_agent_id, ai_instructions)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-                 (SELECT COALESCE(MAX(board_order), 0) + 10 FROM issues WHERE project_id = $2 AND deleted_at IS NULL))
+                 (SELECT COALESCE(MAX(board_order), 0) + 10 FROM issues WHERE project_id = $2 AND deleted_at IS NULL),
+                 $14,$15)
          RETURNING *,
                    NULL::text AS assignee_name, NULL::text AS assignee_avatar,
                    NULL::text AS assignee_color, NULL::text AS reporter_name,
                    '[]'::json AS comments`,
         [key, projectId, sprintId ?? null, type, title, description, priority, status,
-         assigneeId ?? null, reporterId ?? null, storyPoints, labels, epicKey ?? null]
+         assigneeId ?? null, reporterId ?? null, storyPoints, labels, epicKey ?? null,
+         assignedAgentId ?? null, aiInstructions ?? null]
       );
 
       logger.info('Issue créée', { issueId: rows[0].id, key, projectId });
+
+      // Déclencher l'agent si assigné et autoStart activé
+      if (assignedAgentId) {
+        emitIssueCreated({
+          issueId: rows[0].id,
+          assignedAgentId,
+          aiInstructions: aiInstructions ?? '',
+          autoStart: autoStart === true,
+        });
+      }
+
       return res.status(201).json(formatIssue(rows[0]));
     } catch (err) {
       return next(err);
@@ -238,10 +267,12 @@ router.put(
       const {
         title, description, type, priority, status, assigneeId,
         reporterId, storyPoints, labels, epicKey, sprintId,
+        assignedAgentId, aiInstructions,
       } = req.body as {
         title: string; description?: string; type?: string; priority?: string;
         status?: string; assigneeId?: string; reporterId?: string;
         storyPoints?: number; labels?: string[]; epicKey?: string; sprintId?: string;
+        assignedAgentId?: string | null; aiInstructions?: string | null;
       };
 
       await client.query('BEGIN');
@@ -250,7 +281,9 @@ router.put(
         `UPDATE issues SET
            title=$1, description=$2, type=$3, priority=$4, status=$5,
            assignee_id=$6, reporter_id=$7, story_points=$8, labels=$9,
-           epic_key=$10, sprint_id=$11
+           epic_key=$10, sprint_id=$11,
+           assigned_agent_id=COALESCE($13, assigned_agent_id),
+           ai_instructions=COALESCE($14, ai_instructions)
          WHERE id=$12 AND deleted_at IS NULL
          RETURNING *,
                    NULL::text AS assignee_name, NULL::text AS assignee_avatar,
@@ -258,7 +291,9 @@ router.put(
                    '[]'::json AS comments`,
         [title, description ?? '', type ?? 'task', priority ?? 'medium', status ?? 'todo',
          assigneeId ?? null, reporterId ?? null, storyPoints ?? 0, labels ?? [], epicKey ?? null,
-         sprintId ?? null, req.params.id]
+         sprintId ?? null, req.params.id,
+         assignedAgentId !== undefined ? assignedAgentId : null,
+         aiInstructions !== undefined ? aiInstructions : null]
       );
 
       if (!rowCount) throw new AppError(404, 'Issue introuvable');
@@ -272,6 +307,16 @@ router.put(
       );
 
       await client.query('COMMIT');
+
+      // Notifier si l'agent assigné a changé
+      if (assignedAgentId !== undefined) {
+        emitIssueUpdated({
+          issueId: req.params.id,
+          changedFields: ['assigned_agent_id'],
+          assignedAgentId: assignedAgentId ?? undefined,
+          aiInstructions: aiInstructions ?? undefined,
+        });
+      }
 
       res.json(formatIssue(full[0]));
     } catch (err) {

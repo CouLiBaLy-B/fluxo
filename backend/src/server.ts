@@ -130,31 +130,37 @@ async function start(): Promise<void> {
   try {
     // Vérifier la connexion à la base de données avant de démarrer
     await checkDbConnection();
+    logger.info('✅ PostgreSQL connecté');
 
     // Créer l'admin si la base est vide (premier démarrage)
     await bootstrapAdmin();
 
     // Charger la config LLM depuis la DB (prioritaire sur env vars)
     await llmService.loadFromDB();
+    const llmProvider = process.env['LLM_PROVIDER'] ?? 'mock';
+    logger.info(`✅ LLM service : ${llmProvider}`);
 
     // Créer le serveur HTTP (nécessaire pour partager le port avec WebSocket)
     const server = http.createServer(app);
 
     // Attacher le serveur WebSocket sur le même port (/ws)
     wsService.attach(server);
+    logger.info(`✅ WebSocket prêt (ws://0.0.0.0:${config.port}/ws)`);
 
     // Enregistrer les listeners d'événements issues (auto-dispatch agents)
     registerIssueEventListeners();
+    logger.info('✅ Event listeners enregistrés');
 
     // Démarrer l'orchestrateur (polling queue + heartbeat WS)
     orchestrator.start();
+    logger.info('✅ Queue service démarré (polling)');
 
     server.listen(config.port, '0.0.0.0', () => {
-      logger.info(`Serveur API + WebSocket démarré sur le port ${config.port}`, {
+      logger.info(`🚀 API démarrée sur http://0.0.0.0:${config.port}`, {
         env: config.nodeEnv,
         port: config.port,
-        ws: 'ws://0.0.0.0:' + config.port + '/ws',
-        llmProvider: process.env['LLM_PROVIDER'] ?? 'mock',
+        ws: `ws://0.0.0.0:${config.port}/ws`,
+        llmProvider,
       });
     });
 

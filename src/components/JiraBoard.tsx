@@ -595,20 +595,10 @@ function CreateIssueModal({ project, sprints, users, currentUserId, defaultStatu
   const [aiInstructions, setAiInstructions] = useState('');
   const [autoStart, setAutoStart] = useState(false);
 
-  const assignAgentMutation = useMutation({
-    mutationFn: ({ issueId, payload }: { issueId: string; payload: { agentId: string; instructions?: string; autoStart?: boolean } }) =>
-      api.agents.assignToIssue(issueId, payload),
-  });
-
   const createMutation = useMutation({
-    mutationFn: (data: IssueFormData) => api.issues.create(data),
-    onSuccess: (newIssue) => {
-      if (agentId && newIssue?.id) {
-        assignAgentMutation.mutate({
-          issueId: newIssue.id,
-          payload: { agentId, instructions: aiInstructions || undefined, autoStart },
-        });
-      }
+    mutationFn: (data: IssueFormData & { assignedAgentId?: string; aiInstructions?: string; autoStart?: boolean }) =>
+      api.issues.create(data),
+    onSuccess: () => {
       onCreated();
       onClose();
     },
@@ -626,6 +616,9 @@ function CreateIssueModal({ project, sprints, users, currentUserId, defaultStatu
       storyPoints,
       labels:      labels.split(',').map(l => l.trim()).filter(Boolean),
       sprintId:    sprintId || null,
+      assignedAgentId: agentId || undefined,
+      aiInstructions:  aiInstructions || undefined,
+      autoStart,
     });
   };
 
