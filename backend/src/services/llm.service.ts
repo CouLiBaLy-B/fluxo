@@ -187,21 +187,6 @@ Pour activer le LLM réel, configurez \`LLM_PROVIDER\` dans votre \`.env\`.`,
 
 // ── Helpers internes ──────────────────────────────────────────────────────────
 
-/**
- * Lecture sécurisée d'une variable d'environnement.
- * Lance une erreur claire si absente.
- */
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `Variable d'environnement manquante : ${name}\n` +
-      `Ajoutez-la dans votre .env ou configurez-la dans les paramètres de l'application.`
-    );
-  }
-  return value;
-}
-
 /** Construit les headers JSON + Authorization Bearer pour les appels REST. */
 function jsonHeaders(apiKey: string): Record<string, string> {
   return {
@@ -257,6 +242,9 @@ function splitSystemMessages(messages: LLMMessage[]): {
 export class LLMService {
   private config: LLMConfig;
 
+  /** Cache mémoire des clés API saisies via l'UI (prioritaire sur process.env) */
+  private apiKeys: Map<string, string> = new Map();
+
   constructor(config?: Partial<LLMConfig>) {
     const provider = (process.env['LLM_PROVIDER'] as LLMProvider) ?? 'mock';
 
@@ -294,9 +282,19 @@ export class LLMService {
         this.config.model = settings['llm_model'];
       }
 
+      // Charger les clés API sauvegardées via l'UI
+      const keysResult = await pool.query<{ key: string; value: string }>(
+        `SELECT key, value FROM app_settings WHERE key LIKE 'api_key_%'`
+      );
+      for (const row of keysResult.rows) {
+        const envName = row.key.replace('api_key_', '');
+        this.apiKeys.set(envName, row.value);
+      }
+
       logger.info('Config LLM chargée depuis DB', {
-        provider: this.config.provider,
-        model:    this.config.model,
+        provider:   this.config.provider,
+        model:      this.config.model,
+        apiKeysSet: keysResult.rows.length,
       });
     } catch (err) {
       logger.warn(
@@ -304,6 +302,34 @@ export class LLMService {
         { error: (err as Error).message }
       );
     }
+  }
+
+  // ── Gestion des clés API ───────────────────────────────────────────────────
+
+  /**
+   * Résout une clé API : cache mémoire (DB) > process.env > erreur.
+   * Remplace requireEnv() pour permettre la saisie via l'UI.
+   */
+  private resolveKey(envName: string): string {
+    const fromCache = this.apiKeys.get(envName);
+    if (fromCache) return fromCache;
+    const fromEnv = process.env[envName];
+    if (fromEnv) return fromEnv;
+    throw new Error(
+      `Clé API manquante : ${envName}. ` +
+      `Configurez-la dans le panneau Admin > Provider LLM.`
+    );
+  }
+
+  /** Vérifie si une clé est disponible (cache mémoire ou process.env). */
+  hasKey(envName: string): boolean {
+    return this.apiKeys.has(envName) || Boolean(process.env[envName]);
+  }
+
+  /** Sauvegarde une clé en mémoire (la persistance DB est gérée par la route admin). */
+  setApiKey(envName: string, value: string): void {
+    this.apiKeys.set(envName, value);
+    logger.info('Clé API mise à jour en mémoire', { key: envName });
   }
 
   /**
@@ -391,7 +417,7 @@ export class LLMService {
   // ── Provider : OpenAI ─────────────────────────────────────────────────────
 
   private async completeOpenAI(messages: LLMMessage[]): Promise<LLMResponse> {
-    const apiKey = requireEnv('OPENAI_API_KEY');
+    const apiKey = this.resolveKey('OPENAI_API_KEY');
 
     const OpenAI = await import('openai')
       .then(m => m.default)
@@ -420,7 +446,7 @@ export class LLMService {
   // ── Provider : Anthropic ──────────────────────────────────────────────────
 
   private async completeAnthropic(messages: LLMMessage[]): Promise<LLMResponse> {
-    const apiKey = requireEnv('ANTHROPIC_API_KEY');
+    const apiKey = this.resolveKey('ANTHROPIC_API_KEY');
 
     const Anthropic = await import('@anthropic-ai/sdk')
       .then(m => m.default)
@@ -492,7 +518,7 @@ export class LLMService {
   // ── Provider : Google Gemini ──────────────────────────────────────────────
 
   private async completeGemini(messages: LLMMessage[]): Promise<LLMResponse> {
-    const apiKey    = requireEnv('GEMINI_API_KEY');
+    const apiKey    = this.resolveKey('GEMINI_API_KEY');
     const model     = this.resolveModel('GEMINI_MODEL', 'gemini');
     const startedAt = Date.now();
 
@@ -541,7 +567,7 @@ export class LLMService {
   // ── Provider : Mistral AI ─────────────────────────────────────────────────
 
   private async completeMistral(messages: LLMMessage[]): Promise<LLMResponse> {
-    const apiKey    = requireEnv('MISTRAL_API_KEY');
+    const apiKey    = this.resolveKey('MISTRAL_API_KEY');
     const model     = this.resolveModel('MISTRAL_MODEL', 'mistral');
     const startedAt = Date.now();
 
@@ -575,7 +601,7 @@ export class LLMService {
   // ── Provider : Cohere ─────────────────────────────────────────────────────
 
   private async completeCohere(messages: LLMMessage[]): Promise<LLMResponse> {
-    const apiKey    = requireEnv('COHERE_API_KEY');
+    const apiKey    = this.resolveKey('COHERE_API_KEY');
     const model     = this.resolveModel('COHERE_MODEL', 'cohere');
     const startedAt = Date.now();
 
@@ -630,7 +656,7 @@ export class LLMService {
   // ── Provider : Groq ───────────────────────────────────────────────────────
 
   private async completeGroq(messages: LLMMessage[]): Promise<LLMResponse> {
-    const apiKey    = requireEnv('GROQ_API_KEY');
+    const apiKey    = this.resolveKey('GROQ_API_KEY');
     const model     = this.resolveModel('GROQ_MODEL', 'groq');
     const startedAt = Date.now();
 
@@ -664,8 +690,8 @@ export class LLMService {
   // ── Provider : Azure OpenAI ───────────────────────────────────────────────
 
   private async completeAzureOpenAI(messages: LLMMessage[]): Promise<LLMResponse> {
-    const apiKey     = requireEnv('AZURE_OPENAI_API_KEY');
-    const endpoint   = requireEnv('AZURE_OPENAI_ENDPOINT'); // https://<resource>.openai.azure.com
+    const apiKey     = this.resolveKey('AZURE_OPENAI_API_KEY');
+    const endpoint   = this.resolveKey('AZURE_OPENAI_ENDPOINT'); // https://<resource>.openai.azure.com
     const deployment = this.resolveModel('AZURE_OPENAI_DEPLOYMENT', 'azure-openai');
     const apiVersion = process.env['AZURE_OPENAI_API_VERSION'] ?? '2025-01-01-preview';
     const startedAt  = Date.now();
@@ -714,7 +740,7 @@ export class LLMService {
   //   • Inference Endpoint dédié → HF_ENDPOINT_URL (prioritaire)
 
   private async completeHuggingFace(messages: LLMMessage[]): Promise<LLMResponse> {
-    const apiKey      = requireEnv('HF_API_KEY');
+    const apiKey      = this.resolveKey('HF_API_KEY');
     const model       = this.resolveModel('HF_MODEL', 'huggingface');
     const endpointUrl = process.env['HF_ENDPOINT_URL'];
     const task        = (process.env['HF_TASK'] ?? 'text-generation') as HFTask;
@@ -985,7 +1011,7 @@ export class LLMService {
       const configured =
         provider === 'mock'   ? true :  // toujours disponible
         provider === 'ollama' ? true :  // local, pas de clé requise
-        Boolean(env.apiKey && process.env[env.apiKey]);
+        Boolean(env.apiKey && this.hasKey(env.apiKey));
 
       return {
         provider,

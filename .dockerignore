@@ -15,9 +15,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Backend — contexte séparé, ne pas inclure dans le build frontend
-backend
-
 # Git
 .git
 .gitattributes

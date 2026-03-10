@@ -247,10 +247,26 @@ export function LLMProviderSettings() {
   const [isTesting,   setIsTesting]   = useState(false);
   const [showModels,  setShowModels]  = useState(false);
 
+  // Clés API saisies dans les champs (valeurs en clair, non encore sauvegardées)
+  const [apiKeys,     setApiKeys]     = useState<Record<string, string>>({});
+  // Clés déjà configurées (valeurs masquées retournées par le backend)
+  const [maskedKeys,  setMaskedKeys]  = useState<Record<string, { set: boolean; masked: string }>>({});
+  // Visibilité de chaque champ clé (password vs text)
+  const [showKey,     setShowKey]     = useState<Record<string, boolean>>({});
+
   // ── Data fetching ──────────────────────────────────────────────────────────
   const { data: config, isLoading } = useQuery<LLMConfig>({
     queryKey: ['admin', 'llm-config'],
     queryFn:  () => api.admin.getLLMConfig(),
+  });
+
+  useQuery({
+    queryKey: ['admin', 'llm-keys'],
+    queryFn:  async () => {
+      const data = await api.admin.getLLMKeys();
+      setMaskedKeys(data);
+      return data;
+    },
   });
 
   // Synchroniser les champs quand la config est chargée
@@ -299,9 +315,20 @@ export function LLMProviderSettings() {
 
   // ── Mutation de sauvegarde ─────────────────────────────────────────────────
   const mutation = useMutation({
-    mutationFn: () => api.admin.updateLLMConfig({ provider, model }),
+    mutationFn: async () => {
+      // Sauvegarder les clés API saisies (valeurs non-vides uniquement)
+      const keysToSave = Object.fromEntries(
+        Object.entries(apiKeys).filter(([, v]) => (v as string).trim())
+      ) as Record<string, string>;
+      if (Object.keys(keysToSave).length > 0) {
+        await api.admin.saveLLMKeys(keysToSave);
+      }
+      return api.admin.updateLLMConfig({ provider, model });
+    },
     onSuccess: (data: { provider: string; model: string; warnings?: string[] }) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'llm-config'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'llm-keys'] });
+      setApiKeys({}); // vider les champs après sauvegarde réussie
       setTestResult(null);
 
       const msg = data.warnings?.length
@@ -348,9 +375,7 @@ export function LLMProviderSettings() {
         <h2 className="text-[18px] font-bold text-[#172B4D] mb-1">Provider LLM</h2>
         <p className="text-[13px] text-[#42526E]">
           Choisissez le fournisseur de modèle utilisé par les agents AI.
-          Les clés API se configurent dans{' '}
-          <code className="bg-[#F4F5F7] px-1 rounded">.env</code> et prennent effet
-          après redémarrage du conteneur.
+          Les clés API peuvent être saisies ci-dessous et sont sauvegardées en base de données.
         </p>
       </div>
 
@@ -476,6 +501,80 @@ export function LLMProviderSettings() {
           )}
         </div>
       </div>
+
+      {/* Champs de saisie des clés API */}
+      {PROVIDER_INFO[provider].envKeys.length > 0 && (
+        <div>
+          <label className="block text-[12px] font-semibold text-[#172B4D] uppercase tracking-wide mb-2">
+            Clés API
+          </label>
+          <div className="space-y-3">
+            {PROVIDER_INFO[provider].envKeys.map((envName: string) => {
+              const already = maskedKeys[envName];
+              return (
+                <div key={envName}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <code className="text-[11px] text-[#42526E] bg-[#F4F5F7] px-1.5 py-0.5 rounded">
+                      {envName}
+                    </code>
+                    {already?.set && (
+                      <span className="px-1.5 py-0.5 bg-[#E3FCEF] text-[#006644] rounded text-[10px] font-semibold">
+                        configurée
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showKey[envName] ? 'text' : 'password'}
+                      value={apiKeys[envName] ?? ''}
+                      onChange={(e: { target: { value: string } }) =>
+                        setApiKeys((prev: Record<string, string>) => ({ ...prev, [envName]: e.target.value }))
+                      }
+                      placeholder={
+                        already?.set
+                          ? already.masked
+                          : `Entrez votre ${envName}`
+                      }
+                      className="w-full px-3 py-2 pr-10 border border-[#DFE1E6] rounded-lg
+                                 text-[13px] text-[#172B4D] font-mono
+                                 focus:outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
+                    />
+                    {/* Toggle visibilité */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowKey((prev: Record<string, boolean>) => ({ ...prev, [envName]: !prev[envName] }))
+                      }
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#6B778C] hover:text-[#172B4D]"
+                      title={showKey[envName] ? 'Masquer' : 'Afficher'}
+                    >
+                      {showKey[envName] ? (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+                          <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+                          <line x1="1" y1="1" x2="23" y2="23"/>
+                        </svg>
+                      ) : (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                          <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  {already?.set && !apiKeys[envName] && (
+                    <p className="mt-1 text-[11px] text-[#6B778C]">
+                      Laissez vide pour conserver la clé actuelle.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Avertissement clés manquantes */}
       {!isConfigured && (

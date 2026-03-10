@@ -103,18 +103,29 @@ const REQUIRED_ENV_KEYS: Partial<Record<LLMProvider, string[]>> = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Vérifie si toutes les variables d'environnement requises sont présentes. */
+/** Vérifie si toutes les clés requises sont présentes (DB ou process.env). */
 function isProviderConfigured(provider: LLMProvider): boolean {
   const required = REQUIRED_ENV_KEYS[provider] ?? [];
-  return required.every(key => Boolean(process.env[key]));
+  return required.every(key => llmService.hasKey(key));
 }
 
-/** Retourne le statut détaillé des clés pour un provider. */
+/** Retourne le statut détaillé des clés pour un provider (DB ou process.env). */
 function getProviderEnvStatus(provider: LLMProvider): Record<string, boolean> {
   const required = REQUIRED_ENV_KEYS[provider] ?? [];
   return Object.fromEntries(
-    required.map(key => [key, Boolean(process.env[key])])
+    required.map(key => [key, llmService.hasKey(key)])
   );
+}
+
+/** Masque une valeur de clé API pour l'affichage (premiers 6 + ••• + derniers 4). */
+function maskKey(value: string): string {
+  if (value.length <= 10) return '••••••••••';
+  return value.slice(0, 6) + '••••••••••••' + value.slice(-4);
+}
+
+/** Récupère la valeur d'une clé (cache DB prioritaire sur process.env). */
+function getKeyValue(envName: string): string {
+  return process.env[envName] ?? '';
 }
 
 // ── GET /api/admin/llm-config ─────────────────────────────────────────────────
@@ -264,5 +275,76 @@ router.get('/llm-config/providers', (_req: Request, res: Response) => {
 
   res.json({ providers, current });
 });
+
+// ── GET /api/admin/llm-config/keys ────────────────────────────────────────────
+// Retourne le statut et la valeur masquée de toutes les clés API connues.
+
+router.get('/llm-config/keys', (_req: Request, res: Response) => {
+  const result: Record<string, { set: boolean; masked: string }> = {};
+
+  // Collecter toutes les clés connues (dédupliquées)
+  const allKeys = new Set<string>();
+  for (const keys of Object.values(REQUIRED_ENV_KEYS)) {
+    for (const k of keys ?? []) allKeys.add(k);
+  }
+
+  for (const envName of allKeys) {
+    const isSet = llmService.hasKey(envName);
+    result[envName] = {
+      set:    isSet,
+      masked: isSet ? maskKey(getKeyValue(envName)) : '',
+    };
+  }
+
+  res.json(result);
+});
+
+// ── PUT /api/admin/llm-config/keys ────────────────────────────────────────────
+// Sauvegarde les clés API en DB et les active immédiatement en mémoire.
+
+router.put(
+  '/llm-config/keys',
+  body('keys').isObject().withMessage('keys doit être un objet'),
+
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', details: errors.array() });
+      return;
+    }
+
+    const { keys } = req.body as { keys: Record<string, string> };
+
+    // Valider que les noms de clés sont connus
+    const allKnownKeys = new Set(
+      Object.values(REQUIRED_ENV_KEYS).flat().filter(Boolean) as string[]
+    );
+    const invalid = Object.keys(keys).filter(k => !allKnownKeys.has(k));
+    if (invalid.length) {
+      res.status(400).json({ error: 'UNKNOWN_KEYS', keys: invalid });
+      return;
+    }
+
+    const updated: string[] = [];
+
+    for (const [envName, value] of Object.entries(keys)) {
+      if (!value.trim()) continue;
+
+      // Persistance en DB
+      await pool.query(
+        `INSERT INTO app_settings (key, value, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [`api_key_${envName}`, value.trim()]
+      );
+
+      // Activation immédiate en mémoire (sans redémarrage)
+      llmService.setApiKey(envName, value.trim());
+      updated.push(envName);
+    }
+
+    res.json({ success: true, updated });
+  }
+);
 
 export default router;

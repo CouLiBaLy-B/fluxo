@@ -248,12 +248,43 @@ export const api = {
       model: string;
       availableProviders: string[];
       defaultModels: Record<string, string>;
+      suggestedModels: Record<string, string[]>;
+      providers: Array<{
+        id: string;
+        active: boolean;
+        configured: boolean;
+        envStatus: Record<string, boolean>;
+        defaultModel: string;
+        suggestedModels: string[];
+      }>;
       hasOpenAIKey: boolean;
       hasAnthropicKey: boolean;
+      hasGeminiKey: boolean;
+      hasMistralKey: boolean;
+      hasCohereKey: boolean;
+      hasGroqKey: boolean;
+      hasAzureOpenAIKey: boolean;
+      hasHuggingFaceKey: boolean;
     }>('/admin/llm-config'),
     updateLLMConfig: (body: { provider: string; model: string }) =>
-      request<{ success: boolean; provider: string; model: string }>(
+      request<{ success: boolean; provider: string; model: string; warnings?: string[] }>(
         '/admin/llm-config', { method: 'PUT', body: JSON.stringify(body) }
+      ),
+    testLLMConfig: () =>
+      request<{
+        success: boolean;
+        provider: string;
+        model: string;
+        durationMs: number;
+        tokensUsed?: number;
+        response?: string;
+        error?: string;
+      }>('/admin/llm-config/test'),
+    getLLMKeys: () =>
+      request<Record<string, { set: boolean; masked: string }>>('/admin/llm-config/keys'),
+    saveLLMKeys: (keys: Record<string, string>) =>
+      request<{ success: boolean; updated: string[] }>(
+        '/admin/llm-config/keys', { method: 'PUT', body: JSON.stringify({ keys }) }
       ),
   },
 };
