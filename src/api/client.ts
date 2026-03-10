@@ -15,6 +15,11 @@ import type {
   LoginCredentials,
   RegisterCredentials,
   ApiError,
+  AIAgent,
+  AITaskQueue,
+  AgentLog,
+  AgentArtifact,
+  AssignAgentPayload,
 } from '../types';
 
 const BASE = '/api';
@@ -65,10 +70,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   // 401 → token expiré ou invalide → rediriger vers login
   if (res.status === 401) {
+    console.error('🔐 Authentification échouée (401)', { path, token: !!token });
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     // Utiliser window.location pour déclencher un rechargement complet
     if (!path.startsWith('/auth')) {
+      console.error('🔴 REDIRECTION vers /login causée par 401 sur', path);
       window.location.href = '/login';
     }
   }
@@ -80,6 +87,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await res.json().catch(() => ({})) as ApiError & T;
 
   if (!res.ok) {
+    console.error('❌ Erreur API:', { path, status: res.status, code: body.error, message: body.message });
     throw new ApiRequestError(
       res.status,
       body.error ?? `HTTP_${res.status}`,
@@ -102,6 +110,8 @@ export const api = {
       request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify(credentials) }),
     me: () =>
       request<{ user: AuthResponse['user'] }>('/auth/me'),
+    changePassword: (body: { currentPassword: string; newPassword: string }) =>
+      request<void>('/auth/change-password', { method: 'POST', body: JSON.stringify(body) }),
   },
 
   // ── Projets ─────────────────────────────────────────────────────────────────
@@ -184,5 +194,66 @@ export const api = {
     update: (id: string, body: Partial<JiraUser>) =>
       request<JiraUser>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: string) => request<void>(`/users/${id}`, { method: 'DELETE' }),
+  },
+
+  // ── Agents AI ────────────────────────────────────────────────────────────────
+  agents: {
+    list: () => request<AIAgent[]>('/agents'),
+    get:  (id: string) => request<AIAgent>(`/agents/${id}`),
+    create: (body: Partial<AIAgent> & { name: string; slug: string; type: string }) =>
+      request<AIAgent>('/agents', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Partial<AIAgent>) =>
+      request<AIAgent>(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
+    queue:  (id: string, limit?: number) =>
+      request<AITaskQueue[]>(`/agents/${id}/queue${limit ? `?limit=${limit}` : ''}`),
+    stats:  (id: string) => request<Record<string, unknown>>(`/agents/${id}/stats`),
+
+    // Actions sur les issues
+    assignToIssue: (issueId: string, payload: AssignAgentPayload) =>
+      request<{ message: string; task?: AITaskQueue }>(
+        `/agents/issues/${issueId}/assign-agent`,
+        { method: 'POST', body: JSON.stringify(payload) }
+      ),
+    startOnIssue: (issueId: string, instructions?: string) =>
+      request<{ message: string; task: AITaskQueue }>(
+        `/agents/issues/${issueId}/start-agent`,
+        { method: 'POST', body: JSON.stringify({ instructions }) }
+      ),
+    pauseOnIssue:  (issueId: string) =>
+      request<{ message: string }>(`/agents/issues/${issueId}/pause-agent`, { method: 'POST' }),
+    retryOnIssue:  (issueId: string) =>
+      request<{ message: string }>(`/agents/issues/${issueId}/retry-agent`, { method: 'POST' }),
+    cancelOnIssue: (issueId: string) =>
+      request<{ message: string }>(`/agents/issues/${issueId}/cancel-agent`, { method: 'DELETE' }),
+
+    // Données d'une issue
+    logs:           (issueId: string, limit?: number) =>
+      request<AgentLog[]>(`/agents/issues/${issueId}/agent-logs${limit ? `?limit=${limit}` : ''}`),
+    artifacts:      (issueId: string) =>
+      request<AgentArtifact[]>(`/agents/issues/${issueId}/artifacts`),
+    confluenceLink: (issueId: string) =>
+      request<Record<string, unknown> | null>(`/agents/issues/${issueId}/confluence-link`),
+
+    // Queue globale
+    globalQueue: (status?: string) =>
+      request<AITaskQueue[]>(`/agents/queue${status ? `?status=${status}` : ''}`),
+    globalStats: () => request<Record<string, unknown>>('/agents/queue/stats'),
+  },
+
+  // ── Admin / Configuration ────────────────────────────────────────────────────
+  admin: {
+    getLLMConfig: () => request<{
+      provider: string;
+      model: string;
+      availableProviders: string[];
+      defaultModels: Record<string, string>;
+      hasOpenAIKey: boolean;
+      hasAnthropicKey: boolean;
+    }>('/admin/llm-config'),
+    updateLLMConfig: (body: { provider: string; model: string }) =>
+      request<{ success: boolean; provider: string; model: string }>(
+        '/admin/llm-config', { method: 'PUT', body: JSON.stringify(body) }
+      ),
   },
 };

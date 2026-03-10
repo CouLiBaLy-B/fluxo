@@ -9,19 +9,23 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "bcryptjs": "2.4.3",
     "compression": "^1.8.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-async-errors": "^3.1.0",
     "express-rate-limit": "^7.4.0",
     "express-validator": "^7.2.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "9.0.2",
     "morgan": "^1.10.0",
+    "openai": "^4.77.0",
     "pg": "^8.12.0",
     "uuid": "^10.0.0",
-    "winston": "^3.13.0"
+    "winston": "^3.13.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "2.4.6",
@@ -33,6 +37,7 @@
     "@types/node": "^20.14.0",
     "@types/pg": "^8.11.6",
     "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.13",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5"

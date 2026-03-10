@@ -1,3 +1,7 @@
 {
-    "DockerRun.DisableAutoGenerateConfig": true
+    "DockerRun.DisableAutoGenerateConfig": true,
+    "chat.tools.terminal.autoApprove": {
+        "docker compose": true,
+        "docker system": true
+    }
 }

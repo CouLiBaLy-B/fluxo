@@ -293,27 +293,42 @@ router.put(
   '/pages/:id',
   [
     param('id').notEmpty(),
-    body('title').trim().notEmpty().isLength({ max: 255 }),
+    body('title').optional().trim().notEmpty().withMessage('Le titre ne peut pas être vide').isLength({ max: 255 }),
     body('content').optional().isLength({ max: 100_000 }),
     body('tags').optional().isArray(),
   ],
   validate,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const pageId = req.params.id;
       const { title, content, tags, emoji } = req.body as {
-        title: string; content?: string; tags?: string[]; emoji?: string;
+        title?: string; content?: string; tags?: string[]; emoji?: string;
       };
 
+      logger.info('📝 Mise à jour de page Confluence', { pageId, hasTitle: !!title, hasContent: !!content });
+
       const { rows } = await pool.query<PageRow>(
-        `UPDATE confluence_pages SET title=$1, content=$2, tags=$3, emoji=$4
-         WHERE id=$5 AND deleted_at IS NULL
+        `UPDATE confluence_pages
+         SET title   = COALESCE($1, title),
+             content = $2,
+             tags    = COALESCE($3, tags),
+             emoji   = COALESCE($4, emoji),
+             updated_at = NOW()
+         WHERE id = $5 AND deleted_at IS NULL
          RETURNING *, NULL::text AS author_name`,
-        [title, content ?? '', tags ?? [], emoji ?? '📄', req.params.id]
+        [title ?? null, content ?? '', tags ?? null, emoji ?? null, pageId]
       );
 
-      if (!rows[0]) throw new AppError(404, 'Page introuvable');
+      if (!rows[0]) {
+        logger.warn('❌ Page non trouvée', { pageId });
+        throw new AppError(404, 'Page introuvable');
+      }
+
+      logger.info('✅ Page mise à jour avec succès', { pageId });
       res.json(formatPage(rows[0]));
     } catch (err) {
+      const error = err as Error;
+      logger.error('❌ Erreur mise à jour page', { error: error.message, pageId: req.params.id });
       return next(err);
     }
   }

@@ -1,0 +1,721 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Confluence Editor Styles — Spécifications Atlassian exactes
+   Utilisé par RichTextEditor.tsx et tous les composants Confluence
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Zone d'édition TipTap ───────────────────────────────────────────────────── */
+
+.confluence-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #ffffff;
+}
+
+/* Contenu principal de l'éditeur */
+.confluence-editor-wrapper .ProseMirror {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Ubuntu, sans-serif;
+  font-size: 15px;
+  line-height: 1.714;
+  color: #172B4D;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 40px 80px;
+  min-height: 400px;
+  outline: none;
+}
+
+/* Placeholder quand l'éditeur est vide */
+.confluence-editor-wrapper .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #97A0AF;
+  pointer-events: none;
+  float: left;
+  height: 0;
+  font-style: italic;
+}
+
+/* ── Typographie dans l'éditeur TipTap ──────────────────────────────────────── */
+
+.confluence-editor-wrapper .ProseMirror h1 {
+  font-size: 29px;
+  font-weight: 700;
+  color: #172B4D;
+  margin: 30px 0 8px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.confluence-editor-wrapper .ProseMirror h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #172B4D;
+  margin: 28px 0 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #DFE1E6;
+  line-height: 1.3;
+}
+
+.confluence-editor-wrapper .ProseMirror h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #172B4D;
+  margin: 20px 0 4px;
+  line-height: 1.3;
+}
+
+.confluence-editor-wrapper .ProseMirror h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #344563;
+  margin: 16px 0 4px;
+}
+
+.confluence-editor-wrapper .ProseMirror p {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.714;
+  color: #172B4D;
+}
+
+.confluence-editor-wrapper .ProseMirror strong {
+  font-weight: 700;
+  color: #172B4D;
+}
+
+.confluence-editor-wrapper .ProseMirror em {
+  font-style: italic;
+  color: #344563;
+}
+
+.confluence-editor-wrapper .ProseMirror s {
+  text-decoration: line-through;
+  color: #8993A4;
+}
+
+.confluence-editor-wrapper .ProseMirror u {
+  text-decoration: underline;
+}
+
+/* Code inline */
+.confluence-editor-wrapper .ProseMirror code {
+  font-family: 'SFMono-Regular', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  font-size: 0.875em;
+  background: #F4F5F7;
+  color: #E01E5A;
+  border: 1px solid #DFE1E6;
+  border-radius: 3px;
+  padding: 2px 5px;
+}
+
+/* Bloc de code */
+.confluence-editor-wrapper .ProseMirror pre {
+  background: #1E1E2E;
+  border-radius: 6px;
+  padding: 16px 20px;
+  overflow-x: auto;
+  margin: 16px 0;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.confluence-editor-wrapper .ProseMirror pre code {
+  background: none;
+  color: #CDD6F4;
+  font-size: inherit;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+}
+
+/* Blockquote */
+.confluence-editor-wrapper .ProseMirror blockquote {
+  border-left: 4px solid #4C9AFF;
+  margin: 16px 0;
+  padding: 8px 16px;
+  background: #F4F5F7;
+  border-radius: 0 4px 4px 0;
+  color: #42526E;
+  font-style: italic;
+}
+
+/* Listes */
+.confluence-editor-wrapper .ProseMirror ul {
+  list-style: disc;
+  margin: 8px 0 16px 24px;
+  padding: 0;
+}
+
+.confluence-editor-wrapper .ProseMirror ol {
+  list-style: decimal;
+  margin: 8px 0 16px 24px;
+  padding: 0;
+}
+
+.confluence-editor-wrapper .ProseMirror li {
+  font-size: 15px;
+  line-height: 1.7;
+  margin-bottom: 4px;
+  color: #172B4D;
+}
+
+.confluence-editor-wrapper .ProseMirror li > p {
+  margin: 0;
+}
+
+/* Séparateur horizontal */
+.confluence-editor-wrapper .ProseMirror hr {
+  border: none;
+  border-top: 1px solid #DFE1E6;
+  margin: 24px 0;
+}
+
+/* Liens */
+.confluence-editor-wrapper .ProseMirror a {
+  color: #0052CC;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.confluence-editor-wrapper .ProseMirror a:hover {
+  text-decoration: underline;
+  color: #0065FF;
+}
+
+/* ── Task List (liste de tâches) ─────────────────────────────────────────────── */
+
+.confluence-editor-wrapper .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.confluence-editor-wrapper .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.confluence-editor-wrapper .ProseMirror ul[data-type="taskList"] li > label {
+  display: flex;
+  align-items: center;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.confluence-editor-wrapper .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #0052CC;
+  cursor: pointer;
+}
+
+.confluence-editor-wrapper .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: #8993A4;
+}
+
+/* ── Tableaux ────────────────────────────────────────────────────────────────── */
+
+.confluence-editor-wrapper .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 16px 0;
+  font-size: 14px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.confluence-editor-wrapper .ProseMirror th {
+  background: #F4F5F7;
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border: 1px solid #DFE1E6;
+  color: #172B4D;
+  font-size: 13px;
+}
+
+.confluence-editor-wrapper .ProseMirror td {
+  padding: 10px 14px;
+  border: 1px solid #DFE1E6;
+  vertical-align: top;
+  min-width: 100px;
+}
+
+.confluence-editor-wrapper .ProseMirror tr:hover td {
+  background: #FAFBFC;
+}
+
+/* Sélection de cellule tableau */
+.confluence-editor-wrapper .ProseMirror .selectedCell::after {
+  background: rgba(0, 82, 204, 0.08);
+  content: '';
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+
+.confluence-editor-wrapper .ProseMirror .column-resize-handle {
+  background-color: #4C9AFF;
+  bottom: 0;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 4px;
+  pointer-events: none;
+}
+
+/* ── Panneaux Info/Warning/Error/Success ─────────────────────────────────────── */
+
+.confluence-info-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 4px;
+  margin: 16px 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.confluence-info-panel--info {
+  background: #DEEBFF;
+  border-left: 4px solid #4C9AFF;
+  color: #0747A6;
+}
+
+.confluence-info-panel--success {
+  background: #E3FCEF;
+  border-left: 4px solid #00875A;
+  color: #006644;
+}
+
+.confluence-info-panel--warning {
+  background: #FFFAE6;
+  border-left: 4px solid #FF8B00;
+  color: #974F0C;
+}
+
+.confluence-info-panel--error {
+  background: #FFEBE6;
+  border-left: 4px solid #DE350B;
+  color: #BF2600;
+}
+
+.confluence-info-panel--note {
+  background: #F4F5F7;
+  border-left: 4px solid #8993A4;
+  color: #42526E;
+}
+
+.confluence-info-panel__icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  width: 18px;
+  height: 18px;
+}
+
+.confluence-info-panel__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.confluence-info-panel__title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+/* ── Bloc de code avec header langage ────────────────────────────────────────── */
+
+.confluence-code-block {
+  margin: 16px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #2D2D3F;
+}
+
+.confluence-code-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #2D2D3F;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: 'SFMono-Regular', monospace;
+  color: #7F849C;
+}
+
+.confluence-code-block__lang {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: #89B4FA;
+}
+
+.confluence-code-block__copy {
+  background: transparent;
+  border: 1px solid #45475A;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #BAC2DE;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.confluence-code-block__copy:hover {
+  background: #45475A;
+  color: #CDD6F4;
+}
+
+.confluence-code-block__copy--copied {
+  color: #A6E3A1;
+  border-color: #A6E3A1;
+}
+
+/* ── Bubble Menu (toolbar flottante à la sélection) ──────────────────────────── */
+
+.confluence-bubble-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #172B4D;
+  border-radius: 6px;
+  padding: 4px 6px;
+  box-shadow: 0 4px 16px rgba(9, 30, 66, 0.35);
+}
+
+.confluence-bubble-menu button {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #B3D4FF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+}
+
+.confluence-bubble-menu button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.confluence-bubble-menu button.is-active {
+  background: rgba(77, 128, 255, 0.25);
+  color: #4D80FF;
+}
+
+.confluence-bubble-menu__divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 2px;
+}
+
+/* ── Slash Command Menu ──────────────────────────────────────────────────────── */
+
+.confluence-slash-menu {
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #DFE1E6;
+  box-shadow: 0 8px 32px rgba(9, 30, 66, 0.2);
+  padding: 6px;
+  min-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.confluence-slash-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.confluence-slash-menu__item:hover,
+.confluence-slash-menu__item--active {
+  background: #F4F5F7;
+}
+
+.confluence-slash-menu__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: #F4F5F7;
+  border: 1px solid #DFE1E6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 15px;
+}
+
+.confluence-slash-menu__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #172B4D;
+  line-height: 1.2;
+}
+
+.confluence-slash-menu__desc {
+  font-size: 12px;
+  color: #6B778C;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.confluence-slash-menu__group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8993A4;
+  padding: 8px 10px 4px;
+}
+
+/* ── Toolbar fixe de l'éditeur ───────────────────────────────────────────────── */
+
+.confluence-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  background: #FAFBFC;
+  border-bottom: 1px solid #DFE1E6;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.confluence-toolbar__btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #42526E;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.confluence-toolbar__btn:hover {
+  background: #EBECF0;
+  color: #172B4D;
+}
+
+.confluence-toolbar__btn.is-active {
+  background: #DEEBFF;
+  color: #0052CC;
+}
+
+.confluence-toolbar__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.confluence-toolbar__divider {
+  width: 1px;
+  height: 20px;
+  background: #DFE1E6;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.confluence-toolbar__select {
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  color: #42526E;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s;
+  outline: none;
+}
+
+.confluence-toolbar__select:hover {
+  background: #EBECF0;
+  border-color: #DFE1E6;
+}
+
+.confluence-toolbar__select:focus {
+  background: #ffffff;
+  border-color: #0052CC;
+}
+
+/* ── Pied de l'éditeur (word count + auto-save) ──────────────────────────────── */
+
+.confluence-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 40px;
+  border-top: 1px solid #F4F5F7;
+  font-size: 12px;
+  color: #8993A4;
+  flex-shrink: 0;
+}
+
+.confluence-editor-footer__save--saved { color: #00875A; }
+.confluence-editor-footer__save--saving { color: #FF8B00; }
+.confluence-editor-footer__save--error { color: #DE350B; }
+
+/* ── Mode lecture ────────────────────────────────────────────────────────────── */
+
+.confluence-read-mode .ProseMirror {
+  cursor: default;
+}
+
+.confluence-read-mode .ProseMirror *::selection {
+  background: #B3D4FF;
+}
+
+/* ── Table des matières ──────────────────────────────────────────────────────── */
+
+.confluence-toc {
+  position: sticky;
+  top: 24px;
+  padding: 16px;
+  background: #FAFBFC;
+  border: 1px solid #DFE1E6;
+  border-radius: 6px;
+  min-width: 200px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.confluence-toc__title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6B778C;
+  margin-bottom: 10px;
+}
+
+.confluence-toc__item {
+  display: block;
+  font-size: 13px;
+  color: #42526E;
+  text-decoration: none;
+  padding: 3px 6px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.confluence-toc__item:hover {
+  background: #EBECF0;
+  color: #172B4D;
+}
+
+.confluence-toc__item--active {
+  background: #DEEBFF;
+  color: #0052CC;
+  font-weight: 500;
+}
+
+.confluence-toc__item--h2 { padding-left: 16px; }
+.confluence-toc__item--h3 { padding-left: 28px; font-size: 12px; }
+
+/* ── Coloration syntaxique (highlight.js via lowlight) ───────────────────────── */
+
+/* Couleurs Catppuccin Mocha pour le thème sombre */
+.hljs { background: #1E1E2E; color: #CDD6F4; }
+.hljs-comment, .hljs-quote { color: #6C7086; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #CBA6F7; }
+.hljs-string, .hljs-attr { color: #A6E3A1; }
+.hljs-number, .hljs-literal { color: #FAB387; }
+.hljs-type, .hljs-class { color: #89DCEB; }
+.hljs-function, .hljs-title { color: #89B4FA; }
+.hljs-variable, .hljs-params { color: #CDD6F4; }
+.hljs-meta { color: #F38BA8; }
+.hljs-tag { color: #F38BA8; }
+.hljs-name { color: #CBA6F7; }
+.hljs-punctuation { color: #6C7086; }
+.hljs-operator { color: #89DCEB; }
+.hljs-property { color: #89B4FA; }
+.hljs-section { color: #89B4FA; font-weight: bold; }
+.hljs-symbol { color: #A6E3A1; }
+.hljs-deletion { color: #F38BA8; }
+.hljs-addition { color: #A6E3A1; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+  .confluence-editor-wrapper .ProseMirror {
+    padding: 24px 32px 60px;
+  }
+  .confluence-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .confluence-editor-wrapper .ProseMirror {
+    padding: 16px 20px 48px;
+    font-size: 14px;
+  }
+  .confluence-toolbar {
+    padding: 4px 8px;
+  }
+}
+
+/* ── Selection cursor dans l'éditeur ─────────────────────────────────────────── */
+
+.confluence-editor-wrapper .ProseMirror *::selection {
+  background: #B3D4FF;
+}
+
+/* ── Image dans l'éditeur ────────────────────────────────────────────────────── */
+
+.confluence-editor-wrapper .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  cursor: pointer;
+  display: block;
+  margin: 8px 0;
+}
+
+.confluence-editor-wrapper .ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid #4C9AFF;
+}
+
+/* ── Focus général ───────────────────────────────────────────────────────────── */
+
+.confluence-editor-wrapper.is-editing {
+  border: 2px solid #4C9AFF;
+  border-radius: 4px;
+}
+
+.confluence-editor-wrapper.is-read-only {
+  border: none;
+}

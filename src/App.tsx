@@ -10,8 +10,13 @@ import { NotificationsPanel } from './components/NotificationsPanel';
 import { MembersPage }        from './components/MembersPage';
 import { Dashboard }          from './components/Dashboard';
 import { LoginPage }          from './components/LoginPage';
+import { AgentDashboard }          from './components/agents/AgentDashboard';
+import { LLMProviderSettings }    from './components/settings/LLMProviderSettings';
 import { useAuth }            from './contexts/AuthContext';
 import { api }                from './api/client';
+import { ToastProvider }      from './components/ui/Toast';
+import { buildUrl, parseUrl } from './utils/routing';
+import fluxoLogo from './logo/logo_global.png';
 
 import type { JiraProject, ConfluenceSpace, AppView, Notification } from './types';
 
@@ -54,8 +59,8 @@ function useKeyboardShortcuts(callbacks: {
 function ShortcutsModal({ onClose }: { onClose: () => void }) {
   const shortcuts = [
     { keys: ['⌘', 'K'], desc: 'Recherche globale' },
-    { keys: ['J'],       desc: 'Aller sur Jira' },
-    { keys: ['F'],       desc: 'Aller sur Confluence' },
+    { keys: ['J'],       desc: 'Aller sur Fluxo Plan' },
+    { keys: ['F'],       desc: 'Aller sur Fluxo Doc' },
     { keys: ['?'],       desc: 'Raccourcis clavier' },
     { keys: ['ESC'],     desc: 'Fermer' },
   ];
@@ -89,7 +94,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
 // ─── Main App Layout ──────────────────────────────────────────────────────────
 
 type JiraSubView = 'projects' | 'board';
-type TopView = AppView | 'members' | 'dashboard';
+type TopView = AppView | 'members' | 'dashboard' | 'agents' | 'settings';
 
 function AppLayout() {
   const { user, logout } = useAuth();
@@ -149,6 +154,59 @@ function AppLayout() {
   const markRead    = (id: string) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   const markAllRead = ()           => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  // ── Synchronisation URL ────────────────────────────────────────────────────
+
+  // Initialise l'état depuis l'URL au démarrage
+  useEffect(() => {
+    const routeState = parseUrl(window.location.pathname);
+    setView(routeState.view as TopView);
+    if (routeState.jiraSubView) setJiraSubView(routeState.jiraSubView);
+    if (routeState.projectId) {
+      const proj = projects.find(p => p.id === routeState.projectId);
+      if (proj) setActiveProject(proj);
+    }
+    if (routeState.pageId && routeState.spaceKey) {
+      setConfPageTarget({ pageId: routeState.pageId, spaceId: spaces.find(s => s.key === routeState.spaceKey)?.id || '' });
+    }
+  }, []); // Uniquement au montage
+
+  // Met à jour l'URL quand la navigation change
+  useEffect(() => {
+    const url = buildUrl({
+      view,
+      jiraSubView,
+      projectId: activeProject?.id,
+      spaceKey: spaces.find(s => confPageTarget?.spaceId === s.id)?.key,
+      pageId: confPageTarget?.pageId,
+    });
+    window.history.replaceState({}, '', url);
+  }, [view, jiraSubView, activeProject, confPageTarget, spaces]);
+
+  // Écoute les changements d'URL (bouton back/forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      const routeState = parseUrl(window.location.pathname);
+      setView(routeState.view as TopView);
+      if (routeState.jiraSubView) setJiraSubView(routeState.jiraSubView);
+      if (routeState.projectId) {
+        const proj = projects.find(p => p.id === routeState.projectId);
+        if (proj) setActiveProject(proj);
+      } else {
+        setActiveProject(null);
+      }
+      if (routeState.pageId && routeState.spaceKey) {
+        const space = spaces.find(s => s.key === routeState.spaceKey);
+        if (space) {
+          setConfPageTarget({ pageId: routeState.pageId, spaceId: space.id });
+        }
+      } else {
+        setConfPageTarget(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [projects, spaces]);
 
   // ── Handlers projets ───────────────────────────────────────────────────────
 
@@ -214,9 +272,11 @@ function AppLayout() {
 
   const NAV_ITEMS: { id: TopView; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Accueil', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
-    { id: 'jira', label: 'Jira', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" opacity="0.7"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5" opacity="0.7"/></svg> },
-    { id: 'confluence', label: 'Confluence', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3.315 16.808c-.35.56-.739 1.202-.997 1.638a.965.965 0 0 0 .364 1.35l3.304 1.87a.983.983 0 0 0 1.36-.35c.225-.392.59-1.005.993-1.658 2.718-4.428 5.472-3.876 10.416-1.49l3.286 1.596a.983.983 0 0 0 1.31-.493l1.449-3.45a.965.965 0 0 0-.498-1.298c-1.13-.532-3.37-1.62-5.446-2.6C11.362 9.918 5.803 10.47 3.315 16.808zM20.685 7.192c.35-.56.738-1.202.997-1.638a.965.965 0 0 0-.364-1.35l-3.304-1.87a.983.983 0 0 0-1.36.35c-.225.392-.59 1.005-.993 1.658-2.718 4.428-5.472 3.876-10.416 1.49L1.959 5.236a.983.983 0 0 0-1.31.493L.2 9.179a.965.965 0 0 0 .498 1.298c1.13.532 3.37 1.62 5.446 2.6 7.195 3.515 12.754 2.963 15.541-3.885z"/></svg> },
+    { id: 'jira', label: 'Fluxo Plan', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" opacity="0.7"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5" opacity="0.7"/></svg> },
+    { id: 'confluence', label: 'Fluxo Doc', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3.315 16.808c-.35.56-.739 1.202-.997 1.638a.965.965 0 0 0 .364 1.35l3.304 1.87a.983.983 0 0 0 1.36-.35c.225-.392.59-1.005.993-1.658 2.718-4.428 5.472-3.876 10.416-1.49l3.286 1.596a.983.983 0 0 0 1.31-.493l1.449-3.45a.965.965 0 0 0-.498-1.298c-1.13-.532-3.37-1.62-5.446-2.6C11.362 9.918 5.803 10.47 3.315 16.808zM20.685 7.192c.35-.56.738-1.202.997-1.638a.965.965 0 0 0-.364-1.35l-3.304-1.87a.983.983 0 0 0-1.36.35c-.225.392-.59 1.005-.993 1.658-2.718 4.428-5.472 3.876-10.416 1.49L1.959 5.236a.983.983 0 0 0-1.31.493L.2 9.179a.965.965 0 0 0 .498 1.298c1.13.532 3.37 1.62 5.446 2.6 7.195 3.515 12.754 2.963 15.541-3.885z"/></svg> },
     { id: 'members', label: 'Membres', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
+    { id: 'agents',   label: 'Agents AI', icon: '🤖' },
+    { id: 'settings', label: 'Paramètres', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
   ];
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -227,10 +287,8 @@ function AppLayout() {
       {/* ── Navigation principale ─────────────────────────────────────── */}
       <nav className="flex-shrink-0 flex items-center h-[56px] px-4 gap-2" style={{ background: '#0065FF' }}>
         <div className="flex items-center gap-2 mr-3 flex-shrink-0">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M11.12 1.095a.6.6 0 0 0-.9.52v8.695l-2.52-4.87a.6.6 0 0 0-1.053-.002L.893 16.75A.6.6 0 0 0 1.42 17.6h6.48l3.252-6.284V22.3a.6.6 0 0 0 1.2 0V11.316l3.252 6.284h6.48a.6.6 0 0 0 .527-.85L11.12 1.095z" fill="white" />
-          </svg>
-          <span className="text-white font-bold text-[15px] tracking-tight">Atlassian</span>
+          <img src={fluxoLogo} alt="Fluxo" className="w-6 h-6 rounded" />
+          <span className="text-white font-bold text-[15px] tracking-tight">Fluxo</span>
         </div>
 
         <div className="w-px h-5 bg-white/20 mx-1" />
@@ -346,6 +404,12 @@ function AppLayout() {
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8993A4" strokeWidth="2.5"><path d="m9 18 6-6-6-6"/></svg>
             <span className="font-semibold text-[#172B4D]">Membres</span>
           </>
+        ) : view === 'agents' ? (
+          <>
+            <span className="text-[#42526E] font-medium">Agents AI</span>
+            <span className="text-[#8993A4] text-[10px]">›</span>
+            <span className="font-semibold text-[#172B4D]">Tableau de bord</span>
+          </>
         ) : (
           <span className="font-semibold text-[#172B4D]">Tableau de bord</span>
         )}
@@ -378,6 +442,8 @@ function AppLayout() {
             ? `${totalPages} pages · ${spaces.length} espaces`
             : view === 'members'
             ? `${users.length} membres`
+            : view === 'agents'
+            ? 'Orchestration AI'
             : ''
           }
         </span>
@@ -392,6 +458,7 @@ function AppLayout() {
             spaces={spaces}
             users={users}
             notifications={notifications}
+            currentUser={user}
             onSelectProject={p => { handleSelectProject(p); setView('jira'); }}
             onSelectPage={(pageId, spaceId) => { setView('confluence'); setConfPageTarget({ pageId, spaceId }); }}
           />
@@ -419,11 +486,20 @@ function AppLayout() {
             initialPageTarget={confPageTarget}
             onPageTargetConsumed={() => setConfPageTarget(null)}
           />
+        ) : view === 'agents' ? (
+          <div className="flex-1 overflow-y-auto">
+            <AgentDashboard />
+          </div>
+        ) : view === 'settings' ? (
+          <div className="flex-1 overflow-y-auto p-8">
+            <LLMProviderSettings />
+          </div>
         ) : (
           <MembersPage
             users={users}
             onAddUser={() => undefined}
             onUpdateUser={() => undefined}
+            currentUserId={user?.id ?? null}
           />
         )}
       </main>
@@ -461,13 +537,15 @@ function AppLayout() {
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/*" element={
-        <PrivateRoute>
-          <AppLayout />
-        </PrivateRoute>
-      } />
-    </Routes>
+    <ToastProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/*" element={
+          <PrivateRoute>
+            <AppLayout />
+          </PrivateRoute>
+        } />
+      </Routes>
+    </ToastProvider>
   );
 }

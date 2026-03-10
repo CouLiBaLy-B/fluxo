@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { AppError } from './errorHandler';
+import { pool } from '../db/pool';
 
 /**
  * Payload stocké dans le JWT.
@@ -39,7 +40,7 @@ function extractToken(req: Request): string | null {
  * Vérifie le token JWT et injecte req.user.
  * Retourne 401 si le token est absent ou invalide.
  */
-export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
+export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const token = extractToken(req);
 
   if (!token) {
@@ -48,6 +49,16 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
 
   try {
     const payload = jwt.verify(token, config.jwt.secret) as JwtPayload;
+
+    // Vérifie que l'utilisateur existe toujours en base (détecte les JWT périmés après reset DB)
+    const { rowCount } = await pool.query(
+      'SELECT 1 FROM users WHERE id = $1',
+      [payload.userId]
+    );
+    if (!rowCount) {
+      return next(new AppError(401, 'Session expirée — veuillez vous reconnecter'));
+    }
+
     req.user = payload;
     next();
   } catch (err) {

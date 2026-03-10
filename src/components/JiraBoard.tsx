@@ -16,9 +16,14 @@ import {
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { SprintAnalytics } from './SprintAnalytics';
+import { AgentSelector } from './agents/AgentSelector';
+import { AgentInstructionsField } from './agents/AgentInstructionsField';
+import { AgentTaskPanel } from './agents/AgentTaskPanel';
+import { AIIssueCard } from './kanban/AIIssueCard';
 import type {
   JiraIssue, JiraProject, Sprint, Priority, IssueType, Status,
   JiraBoardView, JiraUser, IssueFormData, ReorderItem,
+  AIAgent, AITaskQueue,
 } from '../types';
 
 // ─── Colonnes Kanban — configuration d'affichage uniquement ──────────────────
@@ -108,7 +113,14 @@ function StatusBadge({ status }: { status: Status }) {
 
 // ─── Issue Card (Board) ───────────────────────────────────────────────────────
 
-function IssueCard({ issue, onClick, overlay }: { issue: JiraIssue; onClick: () => void; overlay?: boolean }) {
+function IssueCard({ issue, onClick, overlay, aiAgent, aiTask, onOpenPanel }: {
+  issue: JiraIssue;
+  onClick: () => void;
+  overlay?: boolean;
+  aiAgent?: AIAgent | null;
+  aiTask?: AITaskQueue | null;
+  onOpenPanel?: () => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: issue.id });
   const style = { transform: CSS.Transform.toString(transform), transition };
   const pCfg = PRIORITY_CONFIG[issue.priority];
@@ -144,14 +156,28 @@ function IssueCard({ issue, onClick, overlay }: { issue: JiraIssue; onClick: () 
           <AssigneeAvatar issue={issue} size={22} />
         </div>
       </div>
+      {aiAgent && (
+        <AIIssueCard
+          agent={aiAgent}
+          task={aiTask}
+          aiProgress={issue.aiProgress}
+          onOpenPanel={onOpenPanel}
+        />
+      )}
     </div>
   );
 }
 
 // ─── Column ───────────────────────────────────────────────────────────────────
 
-function Column({ col, issues, onCardClick, isDraggingOver }: {
-  col: typeof COLUMNS[0]; issues: JiraIssue[]; onCardClick: (i: JiraIssue) => void; isDraggingOver: boolean;
+function Column({ col, issues, onCardClick, isDraggingOver, agentMap, taskByIssue, onOpenAIPanel }: {
+  col: typeof COLUMNS[0];
+  issues: JiraIssue[];
+  onCardClick: (i: JiraIssue) => void;
+  isDraggingOver: boolean;
+  agentMap?: Record<string, AIAgent>;
+  taskByIssue?: Record<string, AITaskQueue>;
+  onOpenAIPanel?: (i: JiraIssue) => void;
 }) {
   const { setNodeRef } = useDroppable({ id: col.id });
   const wipExceeded = col.wip > 0 && issues.length > col.wip;
@@ -172,7 +198,16 @@ function Column({ col, issues, onCardClick, isDraggingOver }: {
           isDraggingOver ? 'bg-[#DEEBFF] ring-2 ring-[#0052CC] ring-opacity-40' : 'bg-[#F4F5F7]'].join(' ')}>
         <SortableContext items={issues.map(i => i.id)} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-2">
-            {issues.map(issue => <IssueCard key={issue.id} issue={issue} onClick={() => onCardClick(issue)} />)}
+            {issues.map(issue => (
+              <IssueCard
+                key={issue.id}
+                issue={issue}
+                onClick={() => onCardClick(issue)}
+                aiAgent={issue.assignedAgentId ? agentMap?.[issue.assignedAgentId] : null}
+                aiTask={taskByIssue?.[issue.id]}
+                onOpenPanel={onOpenAIPanel ? () => onOpenAIPanel(issue) : undefined}
+              />
+            ))}
           </div>
         </SortableContext>
         {issues.length === 0 && !isDraggingOver && (
@@ -556,10 +591,27 @@ function CreateIssueModal({ project, sprints, users, currentUserId, defaultStatu
   const [labels, setLabels]       = useState('');
   const [status, setStatus]       = useState<Status>(defaultStatus ?? 'todo');
   const [sprintId, setSprintId]   = useState(defaultSprintId ?? sprints.find(s => s.active)?.id ?? '');
+  const [agentId, setAgentId]     = useState('');
+  const [aiInstructions, setAiInstructions] = useState('');
+  const [autoStart, setAutoStart] = useState(false);
+
+  const assignAgentMutation = useMutation({
+    mutationFn: ({ issueId, payload }: { issueId: string; payload: { agentId: string; instructions?: string; autoStart?: boolean } }) =>
+      api.agents.assignToIssue(issueId, payload),
+  });
 
   const createMutation = useMutation({
     mutationFn: (data: IssueFormData) => api.issues.create(data),
-    onSuccess: () => { onCreated(); onClose(); },
+    onSuccess: (newIssue) => {
+      if (agentId && newIssue?.id) {
+        assignAgentMutation.mutate({
+          issueId: newIssue.id,
+          payload: { agentId, instructions: aiInstructions || undefined, autoStart },
+        });
+      }
+      onCreated();
+      onClose();
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -662,6 +714,28 @@ function CreateIssueModal({ project, sprints, users, currentUserId, defaultStatu
           <div>
             <label className="block text-[11px] font-semibold text-[#42526E] uppercase tracking-wider mb-1.5">Labels</label>
             <input className="atl-input text-[14px]" value={labels} onChange={e => setLabels(e.target.value)} placeholder="frontend, api, ..." />
+          </div>
+          {/* ── Section Agent AI ── */}
+          <div className="border-t border-[#DFE1E6] pt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">🤖</span>
+              <span className="text-[11px] font-semibold text-[#42526E] uppercase tracking-wider">Assign AI Agent (optional)</span>
+            </div>
+            <AgentSelector value={agentId} onChange={setAgentId} />
+            {agentId && (
+              <div className="mt-3 space-y-3">
+                <AgentInstructionsField value={aiInstructions} onChange={setAiInstructions} />
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoStart}
+                    onChange={e => setAutoStart(e.target.checked)}
+                    className="w-4 h-4 rounded border-[#B3BAC5] text-[#0052CC] accent-[#0052CC]"
+                  />
+                  <span className="text-[12px] text-[#42526E]">Start agent immediately after creation</span>
+                </label>
+              </div>
+            )}
           </div>
           {createMutation.error && (
             <p className="text-[12px] text-[#DE350B]">Erreur : {(createMutation.error as Error).message}</p>
@@ -1070,6 +1144,7 @@ export function JiraBoard({ project, onBack, onUpdateProject }: Props) {
   const [showSprintModal, setShowSprintModal] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [swimlaneMode, setSwimlaneMode]   = useState(false);
+  const [aiPanelIssue, setAiPanelIssue]  = useState<JiraIssue | null>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -1087,6 +1162,33 @@ export function JiraBoard({ project, onBack, onUpdateProject }: Props) {
     queryKey: ['users'],
     queryFn:  api.users.list,
   });
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ['agents'],
+    queryFn:  () => api.agents.list(),
+    refetchInterval: 10000,
+  });
+
+  const { data: globalQueue = [] } = useQuery({
+    queryKey: ['global-queue'],
+    queryFn:  () => api.agents.globalQueue(),
+    refetchInterval: 5000,
+  });
+
+  // Build lookup maps for fast access in IssueCard
+  const agentMap = React.useMemo(() =>
+    Object.fromEntries((agents as AIAgent[]).map(a => [a.id, a])),
+    [agents]
+  );
+
+  const taskByIssue = React.useMemo(() =>
+    Object.fromEntries(
+      (globalQueue as AITaskQueue[])
+        .filter(t => t.status === 'running' || t.status === 'pending' || t.status === 'paused')
+        .map(t => [t.issueId, t])
+    ),
+    [globalQueue]
+  );
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -1336,7 +1438,10 @@ export function JiraBoard({ project, onBack, onUpdateProject }: Props) {
                 <Column key={col.id} col={col}
                   issues={boardIssues.filter(i => i.status === col.id)}
                   onCardClick={setSelected}
-                  isDraggingOver={overColId === col.id} />
+                  isDraggingOver={overColId === col.id}
+                  agentMap={agentMap}
+                  taskByIssue={taskByIssue}
+                  onOpenAIPanel={setAiPanelIssue} />
               ))}
             </div>
             <DragOverlay dropAnimation={{ duration: 200, easing: 'ease' }}>
@@ -1508,6 +1613,25 @@ export function JiraBoard({ project, onBack, onUpdateProject }: Props) {
           onClose={() => setShowAnalytics(false)}
         />
       )}
+
+      {/* ── AI Task Panel ────────────────────────────────────────────────── */}
+      {aiPanelIssue && (() => {
+        const panelAgent = aiPanelIssue.assignedAgentId ? agentMap[aiPanelIssue.assignedAgentId] : null;
+        const panelTask  = taskByIssue[aiPanelIssue.id];
+        if (!panelAgent || !panelTask) return null;
+        return (
+          <div className="fixed bottom-4 right-4 z-50 w-[420px]">
+            <AgentTaskPanel
+              issueId={aiPanelIssue.id}
+              issueKey={aiPanelIssue.key}
+              issueTitle={aiPanelIssue.title}
+              agent={panelAgent}
+              task={panelTask}
+              onClose={() => setAiPanelIssue(null)}
+            />
+          </div>
+        );
+      })()}
 
       {/* Indicateur de synchronisation drag & drop */}
       {reorderMutation.isPending && (

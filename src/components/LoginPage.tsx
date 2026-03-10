@@ -61,7 +61,7 @@ export function LoginPage() {
           <p className="text-gray-500 mt-1">
             {mode === 'login'
               ? 'Accédez à votre espace de travail'
-              : 'Rejoignez votre équipe sur Atlassian Clone'
+              : 'Rejoignez votre équipe sur Fluxo'
             }
           </p>
         </div>

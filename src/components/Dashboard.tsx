@@ -3,7 +3,7 @@ import {
   TrendingUp, CheckCircle, Clock, AlertCircle, Users, FileText,
   BarChart2, Activity, Zap, ArrowRight, Circle, Flag,
 } from 'lucide-react';
-import { JiraIssue, JiraProject, ConfluenceSpace, JiraUser, Notification } from '../types';
+import { JiraIssue, JiraProject, ConfluenceSpace, JiraUser, Notification, AuthUser } from '../types';
 
 const COLUMNS = [
   { id: 'backlog',     label: 'Backlog',     color: '#8993A4' },
@@ -19,6 +19,7 @@ interface Props {
   spaces: ConfluenceSpace[];
   users: JiraUser[];
   notifications: Notification[];
+  currentUser: AuthUser | null;
   onSelectProject: (p: JiraProject) => void;
   onSelectPage: (pageId: string, spaceId: string) => void;
 }
@@ -69,7 +70,7 @@ function MiniDonut({ done, total, color }: { done: number; total: number; color:
   );
 }
 
-export function Dashboard({ issues, projects, spaces, users, notifications, onSelectProject, onSelectPage }: Props) {
+export function Dashboard({ issues, projects, spaces, users, notifications, currentUser, onSelectProject, onSelectPage }: Props) {
   const totalPages = spaces.reduce((a, s) => a + s.pages.length, 0);
   const doneIssues = issues.filter(i => i.status === 'done').length;
   const inProgress = issues.filter(i => i.status === 'in-progress').length;
@@ -112,7 +113,7 @@ export function Dashboard({ issues, projects, spaces, users, notifications, onSe
       <div className="bg-white border-b border-[#DFE1E6] px-8 py-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-[24px] font-bold text-[#172B4D]">Good morning, Alice 👋</h1>
+            <h1 className="text-[24px] font-bold text-[#172B4D]">Good morning, {currentUser?.name?.split(' ')[0] ?? 'there'} 👋</h1>
             <p className="text-[14px] text-[#42526E] mt-1">
               {new Date().toLocaleDateString('en', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>

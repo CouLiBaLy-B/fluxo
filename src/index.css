@@ -135,37 +135,39 @@ body {
 }
 
 /* ── Confluence rendered page ─────────────────────────────── */
+/* Spécifications exactes Atlassian Confluence                  */
 .confluence-content h1 {
-  font-size: 1.75rem;
-  font-weight: 800;
+  font-size: 1.8125rem;  /* 29px */
+  font-weight: 700;
   color: #172B4D;
-  margin: 0 0 1.5rem;
+  margin: 1.875rem 0 0.5rem;
   line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 .confluence-content h2 {
-  font-size: 1.2rem;
-  font-weight: 700;
+  font-size: 1.5rem;  /* 24px */
+  font-weight: 600;
   color: #172B4D;
-  margin: 2.5rem 0 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 2px solid #DFE1E6;
+  margin: 1.75rem 0 0.375rem;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid #DFE1E6;
 }
 .confluence-content h3 {
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 1.25rem;  /* 20px */
+  font-weight: 600;
   color: #172B4D;
-  margin: 1.75rem 0 0.5rem;
+  margin: 1.25rem 0 0.25rem;
 }
 .confluence-content h4 {
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 600;
   color: #344563;
-  margin: 1.5rem 0 0.4rem;
+  margin: 1rem 0 0.25rem;
 }
 .confluence-content p {
-  font-size: 0.9375rem;
+  font-size: 0.9375rem;  /* 15px */
   color: #172B4D;
-  line-height: 1.75;
+  line-height: 1.714;
   margin: 0 0 1rem;
 }
 .confluence-content strong { font-weight: 700; color: #172B4D; }
@@ -173,77 +175,118 @@ body {
 .confluence-content del { text-decoration: line-through; color: #8993A4; }
 .confluence-content ul {
   list-style: disc;
-  margin: 0.5rem 0 1rem 1.25rem;
+  margin: 0.5rem 0 1rem 1.5rem;
   padding: 0;
 }
 .confluence-content ol {
   list-style: decimal;
-  margin: 0.5rem 0 1rem 1.25rem;
+  margin: 0.5rem 0 1rem 1.5rem;
   padding: 0;
 }
 .confluence-content li {
   font-size: 0.9375rem;
   color: #172B4D;
   line-height: 1.7;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.25rem;
 }
+/* Code inline — couleur Atlassian exacte */
 .confluence-content code {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 0.82rem;
+  font-family: 'SFMono-Regular', 'Fira Code', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.875em;
   background: #F4F5F7;
-  color: #BF2600;
+  color: #E01E5A;
+  border: 1px solid #DFE1E6;
   border-radius: 3px;
-  padding: 0.12em 0.42em;
+  padding: 2px 5px;
 }
+/* Bloc de code — thème sombre professionnel */
 .confluence-content pre {
-  background: #172B4D;
+  background: #1E1E2E;
   border-radius: 6px;
-  padding: 1.25rem 1.5rem;
-  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
   overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
 }
 .confluence-content pre code {
   background: none;
-  color: #C1F0C8;
-  font-size: 0.8125rem;
+  color: #CDD6F4;
+  font-size: inherit;
   padding: 0;
+  border: none;
   border-radius: 0;
+}
+/* Blockquote */
+.confluence-content blockquote {
+  border-left: 4px solid #4C9AFF;
+  margin: 1rem 0;
+  padding: 0.5rem 1rem;
+  background: #F4F5F7;
+  border-radius: 0 4px 4px 0;
+  color: #42526E;
+  font-style: italic;
 }
 .confluence-content table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1.25rem 0;
-  border: 1px solid #DFE1E6;
-  border-radius: 4px;
-  overflow: hidden;
+  margin: 1rem 0;
+  font-size: 0.875rem;
 }
 .confluence-content th {
   background: #F4F5F7;
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: 600;
   text-align: left;
   padding: 0.625rem 0.875rem;
-  border-bottom: 2px solid #DFE1E6;
+  border: 1px solid #DFE1E6;
   color: #172B4D;
 }
 .confluence-content td {
   font-size: 0.875rem;
   padding: 0.625rem 0.875rem;
-  border-bottom: 1px solid #DFE1E6;
+  border: 1px solid #DFE1E6;
   color: #172B4D;
   vertical-align: top;
 }
-.confluence-content tr:last-child td { border-bottom: none; }
-.confluence-content tr:hover td { background: #F4F5F7; }
+.confluence-content tr:hover td { background: #FAFBFC; }
 .confluence-content hr {
   border: none;
-  border-top: 2px solid #DFE1E6;
-  margin: 2rem 0;
+  border-top: 1px solid #DFE1E6;
+  margin: 1.5rem 0;
 }
 .confluence-content br { display: block; height: 0.25rem; }
 .confluence-content a {
   color: #0052CC;
   text-decoration: none;
-  font-weight: 500;
 }
-.confluence-content a:hover { text-decoration: underline; }
+.confluence-content a:hover { text-decoration: underline; color: #0065FF; }
+
+/* ── Task list (TipTap) ───────────────────────────────────── */
+.confluence-content ul[data-type="taskList"],
+ul[data-type="taskList"] {
+  list-style: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+ul[data-type="taskList"] li > label {
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #0052CC;
+  cursor: pointer;
+}
+ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: #8993A4;
+}

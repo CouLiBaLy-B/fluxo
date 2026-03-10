@@ -87,6 +87,9 @@ router.put(
     body('color')
       .optional()
       .matches(/^#[0-9A-Fa-f]{6}$/).withMessage('La couleur doit être au format #RRGGBB'),
+    body('role')
+      .optional()
+      .isIn(['admin', 'member', 'viewer']).withMessage('Rôle invalide'),
   ],
   validate,
   async (req: Request, res: Response, next: NextFunction) => {
@@ -121,6 +124,14 @@ router.put(
         values.push(req.body.color);
       }
 
+      if (req.body.role !== undefined) {
+        if (req.user!.role !== 'admin') {
+          throw new AppError(403, 'Seul un admin peut modifier les rôles');
+        }
+        updates.push(`role = $${idx++}`);
+        values.push(req.body.role);
+      }
+
       if (updates.length === 0) {
         throw new AppError(400, 'Aucune donnée à mettre à jour');
       }
@@ -153,6 +164,23 @@ router.delete(
   validate,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Vérifier si l'utilisateur est le dernier administrateur
+      const { rows: [target] } = await pool.query<{ role: string }>(
+        'SELECT role FROM users WHERE id = $1',
+        [req.params.id]
+      );
+      if (!target) {
+        throw new AppError(404, 'Utilisateur introuvable');
+      }
+      if (target.role === 'admin') {
+        const { rows: [{ count }] } = await pool.query<{ count: string }>(
+          "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+        );
+        if (parseInt(count, 10) <= 1) {
+          throw new AppError(409, 'Impossible de supprimer le dernier administrateur');
+        }
+      }
+
       const { rowCount } = await pool.query(
         'DELETE FROM users WHERE id = $1',
         [req.params.id]

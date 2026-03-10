@@ -1,16 +1,24 @@
 import 'dotenv/config';
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
+import http from 'http';
+import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 
 import { config } from './config';
 import logger from './logger';
-import { checkDbConnection, closePool } from './db/pool';
+import { pool, checkDbConnection, closePool } from './db/pool';
 import { notFound, errorHandler } from './middleware/errorHandler';
 import apiRouter from './routes/index';
+import { wsService } from './services/websocket.service';
+import { orchestrator } from './agents/orchestrator';
+import { registerIssueEventListeners } from './events/issue.events';
+import { llmService } from './services/llm.service';
 
 const app = express();
 
@@ -77,10 +85,13 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     env: config.nodeEnv,
     uptime: Math.floor(process.uptime()),
+    ws: { connected: wsService.getConnectedCount() },
   });
 });
 
 // ── Routes API ────────────────────────────────────────────────────────────────
+// Appliquer une limite de corps stricte sur les routes d'authentification (évite le DoS bcrypt)
+app.use('/api/auth', express.json({ limit: '4kb' }));
 // Appliquer le rate limiter auth sur les routes d'authentification
 app.use('/api/auth', authLimiter);
 app.use('/api', apiRouter);
@@ -90,16 +101,60 @@ app.use('/api', apiRouter);
 app.use(notFound);
 app.use(errorHandler);
 
+// ── Bootstrap admin ───────────────────────────────────────────────────────────
+/**
+ * Crée l'utilisateur admin depuis les variables d'environnement si la base est vide.
+ * Idempotent : sans effet si des utilisateurs existent déjà.
+ */
+async function bootstrapAdmin(): Promise<void> {
+  const { rows } = await pool.query<{ count: string }>('SELECT COUNT(*) FROM users');
+  if (parseInt(rows[0].count, 10) > 0) return;
+
+  const adminEmail    = process.env['ADMIN_EMAIL']    ?? 'admin@example.com';
+  const adminUsername = process.env['ADMIN_USERNAME'] ?? 'Admin';
+  const adminPassword = process.env['ADMIN_PASSWORD'] ?? 'admin123456';
+  const adminAvatar   = adminUsername.trim().split(' ')
+    .map((n: string) => n[0]?.toUpperCase() ?? '').join('').slice(0, 2);
+  const adminHash = await bcrypt.hash(adminPassword, config.bcryptRounds);
+
+  await pool.query(
+    `INSERT INTO users (id, name, avatar, color, email, password_hash, role)
+     VALUES ($1,$2,$3,$4,$5,$6,'admin') ON CONFLICT (email) DO NOTHING`,
+    [randomUUID(), adminUsername.trim(), adminAvatar, '#0052CC', adminEmail, adminHash]
+  );
+  logger.info('Admin bootstrapped depuis les variables d\'environnement');
+}
+
 // ── Démarrage du serveur ──────────────────────────────────────────────────────
 async function start(): Promise<void> {
   try {
     // Vérifier la connexion à la base de données avant de démarrer
     await checkDbConnection();
 
-    const server = app.listen(config.port, '0.0.0.0', () => {
-      logger.info(`Serveur API démarré sur le port ${config.port}`, {
+    // Créer l'admin si la base est vide (premier démarrage)
+    await bootstrapAdmin();
+
+    // Charger la config LLM depuis la DB (prioritaire sur env vars)
+    await llmService.loadFromDB();
+
+    // Créer le serveur HTTP (nécessaire pour partager le port avec WebSocket)
+    const server = http.createServer(app);
+
+    // Attacher le serveur WebSocket sur le même port (/ws)
+    wsService.attach(server);
+
+    // Enregistrer les listeners d'événements issues (auto-dispatch agents)
+    registerIssueEventListeners();
+
+    // Démarrer l'orchestrateur (polling queue + heartbeat WS)
+    orchestrator.start();
+
+    server.listen(config.port, '0.0.0.0', () => {
+      logger.info(`Serveur API + WebSocket démarré sur le port ${config.port}`, {
         env: config.nodeEnv,
         port: config.port,
+        ws: 'ws://0.0.0.0:' + config.port + '/ws',
+        llmProvider: process.env['LLM_PROVIDER'] ?? 'mock',
       });
     });
 
@@ -107,6 +162,9 @@ async function start(): Promise<void> {
     // Attend que les requêtes en cours se terminent avant de s'arrêter
     async function shutdown(signal: string): Promise<void> {
       logger.info(`Signal ${signal} reçu — arrêt gracieux en cours`);
+
+      orchestrator.stop();
+      wsService.close();
 
       server.close(async () => {
         logger.info('Serveur HTTP fermé');
@@ -135,7 +193,6 @@ async function start(): Promise<void> {
 // Capturer les erreurs non gérées pour éviter les crashes silencieux
 process.on('unhandledRejection', (reason) => {
   logger.error('Promesse rejetée non gérée', { reason: String(reason) });
-  process.exit(1);
 });
 
 process.on('uncaughtException', (err) => {

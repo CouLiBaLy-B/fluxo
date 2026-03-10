@@ -4,6 +4,12 @@
 #   docker compose down -v             # arrêt + suppression volumes
 #   docker compose logs -f backend     # suivre les logs du backend
 #   docker compose ps                  # état des services
+#
+# Ollama — Modes de déploiement :
+#   CPU uniquement (défaut) : aucune configuration supplémentaire
+#   GPU NVIDIA              : décommenter la section "deploy > resources > reservations"
+#   Ollama externe (hôte)   : commenter le service ollama et pointer
+#                             OLLAMA_BASE_URL=http://host.docker.internal:11434
 
 services:
 
@@ -30,17 +36,149 @@ services:
       start_period: 15s
     networks:
       - atlassian_net
-    # Limites ressources
     deploy:
       resources:
         limits:
           memory: 512M
-    # Logs limités pour éviter de remplir le disque
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+  # ── Ollama — LLM local ────────────────────────────────────────────────────────
+  # Serveur d'inférence local compatible API Anthropic.
+  # Claude Code dans le sandbox se connecte à ce service via ANTHROPIC_BASE_URL.
+  ollama:
+    build:
+      context: .
+      dockerfile: ollama.Dockerfile
+    container_name: atlassian_ollama
+    restart: unless-stopped
+    volumes:
+      # Modèles persistés entre les redémarrages (~4-8 Go selon le modèle)
+      - ollama_data:/root/.ollama
+    # Port NON exposé à l'hôte par défaut — accessible uniquement en interne
+    # Pour exposer : décommenter la ligne ci-dessous (debug / usage externe)
+    # ports:
+    #   - "${OLLAMA_PORT:-11434}:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - atlassian_net
+    # ── GPU NVIDIA (optionnel) ──────────────────────────────────────────────────
+    # Prérequis : nvidia-container-toolkit installé sur l'hôte
+    # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all            # ou count: 1 pour une seule carte
+    #           capabilities: [gpu]
+    deploy:
+      resources:
+        limits:
+          # CPU seul : 8 Go minimum recommandés pour qwen3.5:0.8b-q8_0
+          # Ajuster selon le modèle choisi (voir CLAUDE_CODE_MODEL dans .env)
+          memory: ${OLLAMA_MEMORY_LIMIT:-8G}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Ollama Model Puller — init container ──────────────────────────────────────
+  # Télécharge le modèle au premier démarrage puis se termine (exit 0).
+  # Relancé à chaque `docker compose up` mais sans effet si le modèle est déjà
+  # présent dans le volume ollama_data.
+  ollama-pull:
+    build:
+      context: .
+      dockerfile: ollama.Dockerfile
+    container_name: atlassian_ollama_pull
+    restart: "no"                        # init container — ne redémarre jamais
+    entrypoint: >
+      sh -c "
+        echo '>>> Attente du service Ollama...' &&
+        until curl -sf http://ollama:11434/api/tags > /dev/null; do
+          sleep 3;
+        done &&
+        echo '>>> Pull du modèle ${CLAUDE_CODE_MODEL:-qwen3.5:0.8b-q8_0}...' &&
+        ollama pull ${CLAUDE_CODE_MODEL:-qwen3.5:0.8b-q8_0} &&
+        echo '>>> Modèle prêt.'
+      "
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - atlassian_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ── Sandbox Developer — Environnement d'exécution isolé ───────────────────────
+  # Conteneur où Claude Code s'exécute en mode headless pour générer du code,
+  # compiler, tester et pousser sur GitHub.
+  # Le backend communique avec ce conteneur via docker exec.
+  dev-sandbox:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    container_name: atlassian_sandbox
+    restart: unless-stopped
+    environment:
+      # Connexion à Ollama (API compatible Anthropic)
+      ANTHROPIC_AUTH_TOKEN: ollama
+      ANTHROPIC_API_KEY: ""
+      ANTHROPIC_BASE_URL: http://ollama:11434
+      # Modèle à utiliser dans Claude Code
+      CLAUDE_MODEL: ${CLAUDE_CODE_MODEL:-qwen3.5:0.8b-q8_0}
+      # Désactiver le trafic non-essentiel (analytics, updates checks)
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      # GitHub — laisser vide pour désactiver le push automatique
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_ORG: ${GITHUB_ORG:-}
+      # Identité Git pour les commits automatiques
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-AI Agent}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-ai-agent@atlassian-clone.local}
+    volumes:
+      # Volume partagé pour les workspaces de tâches
+      - sandbox_workspace:/workspace
+    depends_on:
+      # Ollama doit être sain avant de démarrer le sandbox
+      ollama:
+        condition: service_healthy
+      # Le modèle doit être téléchargé avant que Claude Code puisse l'utiliser
+      ollama-pull:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /workspace && claude --version > /dev/null 2>&1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    networks:
+      - atlassian_net
+    deploy:
+      resources:
+        limits:
+          memory: ${SANDBOX_MEMORY_LIMIT:-2G}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ── Node.js REST API ──────────────────────────────────────────────────────────
   backend:
@@ -55,13 +193,51 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET:   ${JWT_SECRET:?JWT_SECRET manquant dans .env}
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
-      # Origines autorisées pour CORS (séparées par virgule)
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80}
+      # ── Admin bootstrap ───────────────────────────────────────────────────
+      ADMIN_EMAIL:    ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-Admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD manquant dans .env}
+      # ── Agents AI ──────────────────────────────────────────────────────────
+      # Fournisseur LLM : mock | openai | anthropic | ollama
+      # Mettre LLM_PROVIDER=ollama dans .env pour utiliser le service ci-dessus
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      # OpenAI (optionnel)
+      OPENAI_API_KEY:   ${OPENAI_API_KEY:-}
+      OPENAI_MODEL:     ${OPENAI_MODEL:-gpt-4o-mini}
+      # Anthropic (optionnel)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL:   ${ANTHROPIC_MODEL:-claude-3-5-haiku-20241022}
+      # Ollama — pointe vers le service Docker interne
+      # Pour utiliser Ollama sur l'hôte à la place, commenter le service ollama
+      # et mettre : OLLAMA_BASE_URL=http://host.docker.internal:11434
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL:    ${OLLAMA_MODEL:-qwen3.5:0.8b-q8_0}
+      # Orchestrateur
+      AGENT_TASK_TIMEOUT_MS:        ${AGENT_TASK_TIMEOUT_MS:-600000}
+      AGENT_MAX_RETRIES:            ${AGENT_MAX_RETRIES:-3}
+      AGENT_QUEUE_POLL_INTERVAL_MS: ${AGENT_QUEUE_POLL_INTERVAL_MS:-5000}
+      AI_AUTO_CREATE_CONFLUENCE:    ${AI_AUTO_CREATE_CONFLUENCE:-true}
+      # ── Sandbox & GitHub ───────────────────────────────────────────────────
+      # Nécessaire pour docker exec vers le conteneur sandbox
+      GITHUB_TOKEN:       ${GITHUB_TOKEN:-}
+      GITHUB_ORG:         ${GITHUB_ORG:-}
+      SANDBOX_CONTAINER:  atlassian_sandbox
+    volumes:
+      # Socket Docker monté en lecture seule pour permettre au backend
+      # d'exécuter des commandes dans le conteneur sandbox via docker exec
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       postgres:
         condition: service_healthy
-    # Port NON exposé à l'hôte — API accessible uniquement via le proxy Nginx
-    # Pour tester : docker exec -it atlassian_api node -e "require('http').get('http://localhost:4000/health',(r)=>console.log(r.statusCode))"
+      ollama:
+        condition: service_healthy
+      # Le backend démarre après le pull pour garantir que le modèle est dispo
+      ollama-pull:
+        condition: service_completed_successfully
+      # Le sandbox doit être opérationnel avant le backend
+      dev-sandbox:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
       interval: 15s
@@ -73,7 +249,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          # 1G pour absorber docker exec + traitement des artefacts
+          memory: 1G
     logging:
       driver: json-file
       options:
@@ -112,6 +289,17 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  # Volume persistant pour les modèles Ollama (~4-8 Go selon le modèle)
+  # Pour pointer vers un répertoire hôte existant (modèles déjà téléchargés) :
+  # driver_opts:
+  #   type: none
+  #   o: bind
+  #   device: /path/to/.ollama/models
+  ollama_data:
+    driver: local
+  # Volume partagé entre le backend et le sandbox pour les workspaces de tâches
+  sandbox_workspace:
     driver: local
 
 networks:

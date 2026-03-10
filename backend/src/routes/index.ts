@@ -5,6 +5,8 @@ import projectsRouter   from './projects';
 import issuesRouter     from './issues';
 import sprintsRouter    from './sprints';
 import confluenceRouter from './confluence';
+import agentsRouter     from './agents.routes';
+import adminRouter      from './admin.routes';
 
 const router = Router();
 
@@ -17,5 +19,11 @@ router.use('/projects',   projectsRouter);
 router.use('/issues',     issuesRouter);
 router.use('/sprints',    sprintsRouter);
 router.use('/confluence', confluenceRouter);
+
+// ── Agents AI ─────────────────────────────────────────────────────────────────
+router.use('/agents',     agentsRouter);
+
+// ── Admin / Configuration ─────────────────────────────────────────────────────
+router.use('/admin',      adminRouter);
 
 export default router;

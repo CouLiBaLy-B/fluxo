@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Users, Mail, Shield, ChevronDown, X, Plus, Search, MoreHorizontal } from 'lucide-react';
-import { JiraUser } from '../types';
+import { Users, Mail, Shield, ChevronDown, X, Plus, Search, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { JiraUser, UserRole } from '../types';
+import { api } from '../api/client';
 
 interface Props {
   users: JiraUser[];
   onAddUser: (u: JiraUser) => void;
   onUpdateUser: (u: JiraUser) => void;
+  currentUserId: string | null;
 }
 
 type Role = 'Admin' | 'Member' | 'Viewer';
@@ -16,29 +19,47 @@ const ROLE_CONFIG: Record<Role, { color: string; bg: string; desc: string }> = {
   Viewer: { color: '#42526E', bg: '#F4F5F7', desc: 'Read-only access to all content' },
 };
 
-const AVATAR_COLORS = [
-  '#6554C0', '#0052CC', '#00875A', '#DE350B', '#FF8B00',
-  '#0747A6', '#403294', '#006644', '#BF2600', '#FF5630',
-];
+function roleToDisplay(role: string | undefined): Role {
+  const r = (role ?? 'member').toLowerCase();
+  if (r === 'admin')  return 'Admin';
+  if (r === 'viewer') return 'Viewer';
+  return 'Member';
+}
 
-function InviteModal({ onInvite, onClose, existingEmails }: {
-  onInvite: (u: JiraUser) => void;
+// ─── Invite Modal ─────────────────────────────────────────────────────────────
+
+function InviteModal({ onClose, existingEmails }: {
   onClose: () => void;
   existingEmails: string[];
 }) {
+  const queryClient = useQueryClient();
   const [name, setName]   = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole]   = useState<Role>('Member');
   const [error, setError] = useState('');
 
+  const mutation = useMutation({
+    mutationFn: () => api.auth.register({
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      password: 'Welcome123!',
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      onClose();
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Une erreur est survenue';
+      setError(msg);
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim()) { setError('Name and email are required'); return; }
-    if (existingEmails.includes(email.toLowerCase())) { setError('This email is already a member'); return; }
-    const avatar = name.trim().split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-    const color  = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-    onInvite({ id: `u${Date.now()}`, name: name.trim(), avatar, color, email: email.toLowerCase() });
-    onClose();
+    if (existingEmails.includes(email.trim().toLowerCase())) { setError('This email is already a member'); return; }
+    setError('');
+    mutation.mutate();
   };
 
   return (
@@ -80,7 +101,9 @@ function InviteModal({ onInvite, onClose, existingEmails }: {
           </div>
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#DFE1E6]">
             <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-            <button type="submit" className="btn-primary">Send Invite</button>
+            <button type="submit" className="btn-primary" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Sending…' : 'Send Invite'}
+            </button>
           </div>
         </form>
       </div>
@@ -88,18 +111,77 @@ function InviteModal({ onInvite, onClose, existingEmails }: {
   );
 }
 
-export function MembersPage({ users, onAddUser, onUpdateUser: _onUpdateUser }: Props) {
+// ─── More Actions Menu ────────────────────────────────────────────────────────
+
+function MoreMenu({ isCurrentUser, onRemove }: {
+  isCurrentUser: boolean;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  if (isCurrentUser) {
+    return <div className="w-7 h-7" />;
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        className="w-7 h-7 rounded flex items-center justify-center text-[#8993A4] hover:bg-[#F4F5F7] hover:text-[#42526E] transition-colors"
+        title="More options"
+        onClick={() => setOpen(prev => !prev)}
+      >
+        <MoreHorizontal size={14} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 bg-white border border-[#DFE1E6] rounded-lg shadow-lg py-1 z-20" style={{ minWidth: 160 }}>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onRemove(); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[#DE350B] hover:bg-[#FFEBE6] transition-colors"
+          >
+            <Trash2 size={13} />
+            Supprimer le membre
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── MembersPage ──────────────────────────────────────────────────────────────
+
+export function MembersPage({ users, currentUserId }: Props) {
+  const queryClient = useQueryClient();
   const [search, setSearch]     = useState('');
   const [showInvite, setShowInvite] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+
+  const roleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: string }) =>
+      api.users.update(userId, { role }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (userId: string) => api.users.delete(userId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+  });
 
   const filtered = users.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
     (u.email ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const roles: Record<string, Role> = {};
-  users.forEach((u, i) => { roles[u.id] = i === 0 ? 'Admin' : 'Member'; });
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#F4F5F7]">
@@ -121,7 +203,7 @@ export function MembersPage({ users, onAddUser, onUpdateUser: _onUpdateUser }: P
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
             { label: 'Total Members', value: users.length, color: '#0052CC', bg: '#DEEBFF', icon: <Users size={16} /> },
-            { label: 'Admins', value: 1, color: '#6554C0', bg: '#EAE6FF', icon: <Shield size={16} /> },
+            { label: 'Admins', value: users.filter(u => u.role === 'admin').length, color: '#6554C0', bg: '#EAE6FF', icon: <Shield size={16} /> },
             { label: 'Active Today', value: users.length, color: '#00875A', bg: '#E3FCEF', icon: <Users size={16} /> },
           ].map(stat => (
             <div key={stat.label} className="bg-white rounded-xl border border-[#DFE1E6] p-4 flex items-center gap-4" style={{ boxShadow: '0 1px 2px rgba(9,30,66,.08)' }}>
@@ -159,9 +241,11 @@ export function MembersPage({ users, onAddUser, onUpdateUser: _onUpdateUser }: P
             </div>
           )}
 
-          {filtered.map((user, idx) => {
-            const role: Role = idx === 0 ? 'Admin' : 'Member';
-            const roleCfg = ROLE_CONFIG[role];
+          {filtered.map((user) => {
+            const displayRole = roleToDisplay(user.role);
+            const roleCfg = ROLE_CONFIG[displayRole];
+            const isCurrentUser = user.id === currentUserId;
+
             return (
               <div key={user.id} className="grid grid-cols-[1fr_1fr_120px_80px] gap-4 items-center px-5 py-3.5 border-b border-[#F4F5F7] hover:bg-[#FAFBFC] transition-colors last:border-0">
                 {/* Member */}
@@ -174,7 +258,7 @@ export function MembersPage({ users, onAddUser, onUpdateUser: _onUpdateUser }: P
                   </div>
                   <div className="min-w-0">
                     <div className="text-[13px] font-semibold text-[#172B4D] truncate">{user.name}</div>
-                    {idx === 0 && <div className="text-[10px] text-[#8993A4]">You</div>}
+                    {isCurrentUser && <div className="text-[10px] text-[#8993A4]">You</div>}
                   </div>
                 </div>
 
@@ -187,22 +271,29 @@ export function MembersPage({ users, onAddUser, onUpdateUser: _onUpdateUser }: P
                 {/* Role */}
                 <div className="relative">
                   <button
-                    onClick={() => setMenuOpen(menuOpen === user.id ? null : user.id)}
+                    onClick={() => !isCurrentUser && setMenuOpen(menuOpen === user.id ? null : user.id)}
                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors hover:opacity-80"
                     style={{ background: roleCfg.bg, color: roleCfg.color }}
+                    disabled={isCurrentUser}
                   >
-                    {role}
-                    {idx !== 0 && <ChevronDown size={10} />}
+                    {displayRole}
+                    {!isCurrentUser && <ChevronDown size={10} />}
                   </button>
 
-                  {menuOpen === user.id && idx !== 0 && (
+                  {menuOpen === user.id && !isCurrentUser && (
                     <div
                       className="absolute top-full left-0 mt-1 bg-white rounded-lg border border-[#DFE1E6] z-20 overflow-hidden"
                       style={{ boxShadow: '0 4px 16px rgba(9,30,66,.16)', minWidth: 160 }}
                     >
                       {(['Admin', 'Member', 'Viewer'] as Role[]).map(r => (
-                        <button key={r} onClick={() => setMenuOpen(null)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-[#F4F5F7] text-left transition-colors">
+                        <button
+                          key={r}
+                          onClick={() => {
+                            roleMutation.mutate({ userId: user.id, role: r.toLowerCase() as UserRole });
+                            setMenuOpen(null);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-[#F4F5F7] text-left transition-colors"
+                        >
                           <div className="w-2 h-2 rounded-full" style={{ background: ROLE_CONFIG[r].color }} />
                           <div>
                             <div className="text-[12px] font-semibold text-[#172B4D]">{r}</div>
@@ -216,13 +307,14 @@ export function MembersPage({ users, onAddUser, onUpdateUser: _onUpdateUser }: P
 
                 {/* Actions */}
                 <div className="flex items-center">
-                  <button
-                    className="w-7 h-7 rounded flex items-center justify-center text-[#8993A4] hover:bg-[#F4F5F7] hover:text-[#42526E] transition-colors"
-                    title="More options"
-                    onClick={() => {}}
-                  >
-                    <MoreHorizontal size={14} />
-                  </button>
+                  <MoreMenu
+                    isCurrentUser={isCurrentUser}
+                    onRemove={() => {
+                      if (window.confirm(`Supprimer ${user.name} de l'équipe ?`)) {
+                        deleteMutation.mutate(user.id);
+                      }
+                    }}
+                  />
                 </div>
               </div>
             );
@@ -248,7 +340,6 @@ export function MembersPage({ users, onAddUser, onUpdateUser: _onUpdateUser }: P
       {showInvite && (
         <InviteModal
           existingEmails={users.map(u => u.email ?? '').filter(Boolean)}
-          onInvite={u => { onAddUser(u); setShowInvite(false); }}
           onClose={() => setShowInvite(false)}
         />
       )}

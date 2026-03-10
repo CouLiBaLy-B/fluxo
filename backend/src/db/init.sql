@@ -23,16 +23,18 @@ $$ LANGUAGE plpgsql;
 
 -- ─── Users ─────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
-  id            TEXT        PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-  name          TEXT        NOT NULL,
-  avatar        TEXT        NOT NULL DEFAULT '',
-  color         TEXT        NOT NULL DEFAULT '#6554C0',
-  email         TEXT        UNIQUE NOT NULL,
-  password_hash TEXT        NOT NULL,         -- hashé avec bcrypt
-  role          TEXT        NOT NULL DEFAULT 'member'
-                            CHECK (role IN ('admin', 'member', 'viewer')),
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                     TEXT        PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  name                   TEXT        NOT NULL,
+  avatar                 TEXT        NOT NULL DEFAULT '',
+  color                  TEXT        NOT NULL DEFAULT '#6554C0',
+  email                  TEXT        UNIQUE NOT NULL,
+  password_hash          TEXT        NOT NULL,         -- hashé avec bcrypt
+  role                   TEXT        NOT NULL DEFAULT 'member'
+                                     CHECK (role IN ('admin', 'member', 'viewer')),
+  failed_login_attempts  INTEGER     NOT NULL DEFAULT 0,   -- verrouillage après 10 échecs
+  locked_until           TIMESTAMPTZ,                      -- NULL = non verrouillé
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 DROP TRIGGER IF EXISTS users_updated_at ON users;
@@ -241,204 +243,221 @@ CREATE TRIGGER page_comments_updated_at
 CREATE INDEX IF NOT EXISTS idx_page_comments_page ON page_comments(page_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- DONNÉES DE SEED (développement)
--- Mot de passe : "password123" hashé avec bcrypt (12 rounds)
--- Hash généré avec : bcrypt.hashSync('password123', 12)
+-- SEED : supprimé — l'admin est créé au démarrage via bootstrapAdmin() (server.ts)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- ─── Seed: Users ───────────────────────────────────────────────────────────────
-INSERT INTO users (id, name, avatar, color, email, password_hash, role) VALUES
-  ('u1', 'Alice Martin', 'AM', '#6554C0', 'alice@example.com',
-   '$2a$12$nHBZfN.XXjpAMoeXgP24WeMxu1yOW.mK9vwj.fOWRQgWhmMdBCZwe', 'admin'),
-  ('u2', 'Bob Kaplan',   'BK', '#0052CC', 'bob@example.com',
-   '$2a$12$nHBZfN.XXjpAMoeXgP24WeMxu1yOW.mK9vwj.fOWRQgWhmMdBCZwe', 'member'),
-  ('u3', 'Carol Singh',  'CS', '#00875A', 'carol@example.com',
-   '$2a$12$nHBZfN.XXjpAMoeXgP24WeMxu1yOW.mK9vwj.fOWRQgWhmMdBCZwe', 'member')
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TABLES AGENTS AI
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- ─── Agents AI enregistrés dans le système ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ai_agents (
+  id                   TEXT        PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  name                 TEXT        NOT NULL,           -- "Agent Developer"
+  slug                 TEXT        UNIQUE NOT NULL,    -- "agent-developer"
+  type                 TEXT        NOT NULL
+                                   CHECK (type IN ('developer', 'qa', 'writer', 'researcher', 'architect')),
+  description          TEXT        NOT NULL DEFAULT '',
+  avatar_emoji         TEXT        NOT NULL DEFAULT '🤖',
+  avatar_color         TEXT        NOT NULL DEFAULT '#6554C0',
+  model                TEXT        NOT NULL DEFAULT 'gpt-4o',
+  system_prompt        TEXT        NOT NULL DEFAULT '',
+  capabilities         JSONB       NOT NULL DEFAULT '[]',
+  is_active            BOOLEAN     NOT NULL DEFAULT true,
+  max_concurrent_tasks INTEGER     NOT NULL DEFAULT 3,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ─── File d'attente des tâches AI ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ai_task_queue (
+  id            TEXT        PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  issue_id      TEXT        NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  agent_id      TEXT        NOT NULL REFERENCES ai_agents(id),
+  status        TEXT        NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+  priority      INTEGER     NOT NULL DEFAULT 5,
+  instructions  TEXT        NOT NULL DEFAULT '',
+  context       JSONB       NOT NULL DEFAULT '{}',
+  progress      INTEGER     NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+  started_at    TIMESTAMPTZ,
+  completed_at  TIMESTAMPTZ,
+  error_message TEXT,
+  retry_count   INTEGER     NOT NULL DEFAULT 0,
+  max_retries   INTEGER     NOT NULL DEFAULT 3,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS ai_task_queue_updated_at ON ai_task_queue;
+CREATE TRIGGER ai_task_queue_updated_at
+  BEFORE UPDATE ON ai_task_queue
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_ai_task_queue_issue   ON ai_task_queue(issue_id);
+CREATE INDEX IF NOT EXISTS idx_ai_task_queue_agent   ON ai_task_queue(agent_id);
+CREATE INDEX IF NOT EXISTS idx_ai_task_queue_status  ON ai_task_queue(status);
+
+-- ─── Logs d'exécution des agents (chaque étape) ────────────────────────────────
+CREATE TABLE IF NOT EXISTS ai_agent_logs (
+  id            TEXT        PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  task_queue_id TEXT        NOT NULL REFERENCES ai_task_queue(id) ON DELETE CASCADE,
+  agent_id      TEXT        NOT NULL REFERENCES ai_agents(id),
+  issue_id      TEXT        NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  level         TEXT        NOT NULL DEFAULT 'info'
+                            CHECK (level IN ('info', 'warning', 'error', 'success')),
+  step          TEXT        NOT NULL DEFAULT '',
+  message       TEXT        NOT NULL,
+  progress      INTEGER     CHECK (progress BETWEEN 0 AND 100),
+  artifacts     JSONB       NOT NULL DEFAULT '[]',
+  tokens_used   INTEGER     NOT NULL DEFAULT 0,
+  duration_ms   INTEGER,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_agent_logs_task  ON ai_agent_logs(task_queue_id);
+CREATE INDEX IF NOT EXISTS idx_ai_agent_logs_issue ON ai_agent_logs(issue_id);
+
+-- ─── Artefacts produits par les agents ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ai_artifacts (
+  id            TEXT        PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  task_queue_id TEXT        NOT NULL REFERENCES ai_task_queue(id) ON DELETE CASCADE,
+  issue_id      TEXT        NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  agent_id      TEXT        NOT NULL REFERENCES ai_agents(id),
+  type          TEXT        NOT NULL
+                            CHECK (type IN ('code', 'test', 'doc', 'report', 'diagram')),
+  filename      TEXT        NOT NULL DEFAULT '',
+  content       TEXT        NOT NULL DEFAULT '',
+  language      TEXT,
+  metadata      JSONB       NOT NULL DEFAULT '{}',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_artifacts_task  ON ai_artifacts(task_queue_id);
+CREATE INDEX IF NOT EXISTS idx_ai_artifacts_issue ON ai_artifacts(issue_id);
+
+-- ─── Liaison Issue Jira <-> Page Confluence (créée par l'agent) ───────────────
+CREATE TABLE IF NOT EXISTS issue_confluence_links (
+  id                   TEXT        PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  issue_id             TEXT        NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  page_id              TEXT        NOT NULL REFERENCES confluence_pages(id) ON DELETE CASCADE,
+  link_type            TEXT        NOT NULL DEFAULT 'generated'
+                                   CHECK (link_type IN ('generated', 'manual', 'referenced')),
+  created_by_agent_id  TEXT        REFERENCES ai_agents(id),
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (issue_id, page_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_issue_confluence_links_issue ON issue_confluence_links(issue_id);
+CREATE INDEX IF NOT EXISTS idx_issue_confluence_links_page  ON issue_confluence_links(page_id);
+
+-- ─── Configuration globale des agents par projet ──────────────────────────────
+CREATE TABLE IF NOT EXISTS project_agent_config (
+  id          TEXT        PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  project_id  TEXT        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  agent_id    TEXT        NOT NULL REFERENCES ai_agents(id),
+  is_enabled  BOOLEAN     NOT NULL DEFAULT true,
+  auto_assign BOOLEAN     NOT NULL DEFAULT false,
+  config      JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (project_id, agent_id)
+);
+
+-- ─── Extension de la table issues pour les agents AI ──────────────────────────
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS assigned_agent_id  TEXT REFERENCES ai_agents(id);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS ai_instructions    TEXT;
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS ai_progress        INTEGER DEFAULT 0 CHECK (ai_progress BETWEEN 0 AND 100);
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS ai_summary         TEXT;
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS confluence_page_id TEXT REFERENCES confluence_pages(id);
+
+CREATE INDEX IF NOT EXISTS idx_issues_agent ON issues(assigned_agent_id);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SEED : 5 Agents AI par défaut
+-- ═══════════════════════════════════════════════════════════════════════════════
+INSERT INTO ai_agents (id, name, slug, type, description, avatar_emoji, avatar_color, model, system_prompt, capabilities, max_concurrent_tasks) VALUES
+  ('agent-dev', 'Agent Developer', 'agent-developer', 'developer',
+   'Génère du code TypeScript/JavaScript propre et maintenable selon les bonnes pratiques.',
+   '🧑‍💻', '#0052CC', 'gpt-4o',
+   'Tu es un expert développeur full-stack. Tu génères du code TypeScript propre, bien commenté, avec gestion d''erreurs complète. Tu respectes les conventions du projet existant.',
+   '["code","review","refactor","debug"]', 5),
+  ('agent-qa', 'Agent QA Tester', 'agent-qa', 'qa',
+   'Génère des tests unitaires, d''intégration et E2E avec couverture maximale.',
+   '🧪', '#00875A', 'gpt-4o',
+   'Tu es un expert QA. Tu génères des tests complets avec Jest, Vitest ou Playwright. Tu identifies les cas limites et t''assures d''une couverture maximale.',
+   '["test","e2e","coverage","qa"]', 5),
+  ('agent-writer', 'Agent Writer', 'agent-writer', 'writer',
+   'Rédige de la documentation technique claire et structurée en Markdown.',
+   '📝', '#6554C0', 'gpt-4o',
+   'Tu es un expert en rédaction technique. Tu produis de la documentation claire, structurée en Markdown, avec des exemples concrets et des diagrammes textuels.',
+   '["doc","markdown","wiki","readme"]', 3),
+  ('agent-researcher', 'Agent Researcher', 'agent-researcher', 'researcher',
+   'Analyse des problèmes techniques, effectue de la veille et propose des solutions.',
+   '🔍', '#FF5630', 'gpt-4o',
+   'Tu es un expert en recherche et analyse technique. Tu synthétises des informations complexes, compares des approches et fournis des recommandations étayées.',
+   '["research","analysis","compare","recommend"]', 3),
+  ('agent-architect', 'Agent Architect', 'agent-architect', 'architect',
+   'Conçoit des architectures logicielles robustes et scalables.',
+   '🏗️', '#FF991F', 'gpt-4o',
+   'Tu es un architecte logiciel senior. Tu conçois des architectures évolutives, identifies les patterns appropriés et produis des diagrammes d''architecture détaillés.',
+   '["architecture","design","diagram","pattern"]', 2)
 ON CONFLICT (id) DO NOTHING;
 
--- ─── Seed: Project ─────────────────────────────────────────────────────────────
-INSERT INTO projects (id, key, name, description, lead_id, type, color, emoji) VALUES
-  ('proj-1', 'PROJ', 'My Project',
-   'The main software project.',
-   'u1', 'software', '#0052CC', '🚀')
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- PARAMÈTRES APPLICATION
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO app_settings (key, value) VALUES
+  ('llm_provider', 'mock'),
+  ('llm_model',    'mock')
 ON CONFLICT (key) DO NOTHING;
 
--- ─── Seed: Project Members ─────────────────────────────────────────────────────
-INSERT INTO project_members (project_id, user_id, role) VALUES
-  ('proj-1', 'u1', 'lead'),
-  ('proj-1', 'u2', 'developer'),
-  ('proj-1', 'u3', 'developer')
-ON CONFLICT (project_id, user_id) DO NOTHING;
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- MIGRATION 003 — Historique du contexte AI (mémoire cumulative par projet)
+-- ═══════════════════════════════════════════════════════════════════════════════
 
--- ─── Seed: Sprint ──────────────────────────────────────────────────────────────
-INSERT INTO sprints (id, project_id, name, goal, start_date, end_date, active) VALUES
-  ('spr-1', 'proj-1', 'Sprint 1', 'Ship the first working version',
-   CURRENT_DATE, CURRENT_DATE + 14, TRUE)
-ON CONFLICT (id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS ai_context_history (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_queue_id   UUID NOT NULL REFERENCES ai_task_queue(id) ON DELETE CASCADE,
+  issue_id        UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  project_id      UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  agent_id        UUID NOT NULL,
+  -- Snapshot du workspace
+  file_tree       JSONB NOT NULL DEFAULT '[]',
+  file_contents   JSONB NOT NULL DEFAULT '{}',
+  total_size_bytes BIGINT NOT NULL DEFAULT 0,
+  -- Résultats build & test
+  build_result    JSONB DEFAULT NULL,
+  test_result     JSONB DEFAULT NULL,
+  -- GitHub
+  github_repo_url   TEXT DEFAULT NULL,
+  github_commit_sha TEXT DEFAULT NULL,
+  github_branch     TEXT DEFAULT 'main',
+  -- Résumé AI
+  ai_summary         TEXT DEFAULT NULL,
+  system_prompt_used TEXT DEFAULT NULL,
+  -- Métriques
+  total_tokens_used INTEGER NOT NULL DEFAULT 0,
+  total_duration_ms INTEGER NOT NULL DEFAULT 0,
+  files_count       INTEGER NOT NULL DEFAULT 0,
+  claude_code_turns INTEGER DEFAULT NULL,
+  -- Chaînage parent/enfant
+  parent_history_id UUID DEFAULT NULL REFERENCES ai_context_history(id) ON DELETE SET NULL,
+  tags              JSONB NOT NULL DEFAULT '[]',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
--- ─── Seed: Issues ──────────────────────────────────────────────────────────────
-INSERT INTO issues (id, key, project_id, sprint_id, type, title, description, priority, status, assignee_id, reporter_id, story_points, labels, board_order) VALUES
-  ('i1', 'PROJ-1', 'proj-1', 'spr-1', 'story',
-   'Setup project repository',
-   '# Setup project repository\n\nInitialize Git, configure CI, and set up the dev environment.\n\n## Tasks\n- [x] Init git repo\n- [x] Configure CI/CD\n- [x] Setup Docker\n',
-   'high', 'done', 'u1', 'u1', 3, '{setup,devops}', 10),
-  ('i2', 'PROJ-2', 'proj-1', 'spr-1', 'task',
-   'Design database schema',
-   '# Database Schema Design\n\nDefine tables, relationships, and indexes for core domain models.\n\n## Tables to design\n- Users & authentication\n- Projects & sprints\n- Issues & comments\n- Confluence spaces & pages\n',
-   'medium', 'in-progress', 'u2', 'u1', 5, '{backend,database}', 20),
-  ('i3', 'PROJ-3', 'proj-1', 'spr-1', 'bug',
-   'Fix login page layout on mobile',
-   '# Bug: Login page overflow on mobile\n\n## Description\nThe form overflows on screens smaller than 375px.\n\n## Steps to reproduce\n1. Open app on mobile (< 375px)\n2. Navigate to /login\n3. Form elements overflow the viewport\n\n## Expected\nForm is fully visible and usable on mobile.\n',
-   'high', 'todo', 'u3', 'u2', 2, '{bug,mobile,ui}', 30),
-  ('i4', 'PROJ-4', 'proj-1', NULL, 'task',
-   'Write API documentation',
-   '# API Documentation\n\nDocument all REST API endpoints using OpenAPI/Swagger.\n\n## Endpoints to document\n- Auth endpoints\n- Projects CRUD\n- Issues CRUD\n- Confluence pages\n',
-   'low', 'backlog', NULL, 'u1', 3, '{documentation}', 40)
-ON CONFLICT (key) DO NOTHING;
+CREATE INDEX IF NOT EXISTS idx_context_history_project
+  ON ai_context_history(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_context_history_issue
+  ON ai_context_history(issue_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_context_history_parent
+  ON ai_context_history(parent_history_id);
 
--- ─── Seed: Comments ────────────────────────────────────────────────────────────
-INSERT INTO comments (id, issue_id, author_id, body) VALUES
-  ('c1', 'i2', 'u1', 'Schema looks good! Don''t forget to add the indexes.'),
-  ('c2', 'i2', 'u2', 'Thanks! I''ll add composite indexes for performance-critical queries.'),
-  ('c3', 'i3', 'u3', 'Reproducing on iPhone SE. The submit button is cut off.')
-ON CONFLICT (id) DO NOTHING;
-
--- ─── Seed: Confluence Spaces ───────────────────────────────────────────────────
-INSERT INTO confluence_spaces (id, key, name, description, emoji, color, owner_id) VALUES
-  ('space-1', 'ENG', 'Engineering',
-   'Technical docs, architecture decisions, runbooks, and onboarding guides.', '⚙️', '#0052CC', 'u1'),
-  ('space-2', 'PM',  'Product',
-   'Product strategy, roadmaps, specs, and user research.', '🧭', '#6554C0', 'u2')
-ON CONFLICT (key) DO NOTHING;
-
--- ─── Seed: Confluence Pages ────────────────────────────────────────────────────
-INSERT INTO confluence_pages (id, space_id, space_key, title, content, author_id, tags, emoji) VALUES
-  ('p1', 'space-1', 'ENG', 'Getting Started',
-E'# Getting Started
-
-Welcome to the **Engineering** space! This guide will help you get up and running.
-
-## Prerequisites
-
-- Node.js 20+
-- Docker & Docker Compose
-- Git
-
-## Quick Start
-
-```bash
-# 1. Clone the repository
-git clone <your-repo>
-cd <your-repo>
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env with your values
-
-# 3. Start all services
-docker compose up --build
-```
-
-## Development Mode
-
-```bash
-# Frontend (port 5173)
-npm run dev
-
-# Backend (port 4000)
-cd backend && npm run dev
-```
-
-## Useful Commands
-
-| Command | Description |
-|---------|-------------|
-| `docker compose up` | Start all services |
-| `docker compose down -v` | Stop and clean up |
-| `docker compose logs -f` | Follow all logs |
-
-## Architecture
-
-```
-Browser → Nginx (80) → Backend API (4000) → PostgreSQL
-```
-',
-   'u1', '{guide,setup,onboarding}', '🚀'),
-  ('p2', 'space-2', 'PM', 'Product Roadmap',
-E'# Product Roadmap
-
-This page tracks our product goals, milestones, and priorities.
-
-## Q1 Goals
-
-- [ ] Launch MVP
-- [ ] Onboard first 10 users
-- [ ] Collect feedback via surveys
-
-## Q2 Goals
-
-- [ ] Feature iteration based on Q1 feedback
-- [ ] Performance improvements (< 2s page load)
-- [ ] Mobile responsive design
-
-## Q3 Goals
-
-- [ ] Native mobile apps (iOS/Android)
-- [ ] Advanced search and filtering
-- [ ] Integrations (Slack, GitHub)
-
-## Principles
-
-> **Build fast, learn faster.** Ship often, measure everything, and iterate.
-
-1. **User-first**: Every decision starts with the user problem
-2. **Data-driven**: Metrics guide prioritization
-3. **Iterative**: Small, frequent releases over big-bang launches
-',
-   'u2', '{roadmap,planning,strategy}', '🗺️'),
-  ('p3', 'space-1', 'ENG', 'API Reference',
-E'# API Reference
-
-Complete documentation for the REST API.
-
-## Authentication
-
-All endpoints (except `/api/auth/*`) require a Bearer token:
-
-```
-Authorization: Bearer <your-jwt-token>
-```
-
-## Endpoints
-
-### Auth
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/auth/register` | Create new account |
-| POST | `/api/auth/login` | Login and get JWT |
-
-### Projects
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/projects` | List all projects |
-| POST | `/api/projects` | Create project |
-| GET | `/api/projects/:id` | Get project |
-| PUT | `/api/projects/:id` | Update project |
-| DELETE | `/api/projects/:id` | Delete project |
-
-### Issues
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/issues` | List issues (with filters) |
-| POST | `/api/issues` | Create issue |
-| GET | `/api/issues/:id` | Get issue with comments |
-| PUT | `/api/issues/:id` | Update issue |
-| PATCH | `/api/issues/:id/status` | Update status |
-| PATCH | `/api/issues/reorder` | Reorder for drag & drop |
-| DELETE | `/api/issues/:id` | Delete issue |
-',
-   'u1', '{api,documentation,reference}', '📚')
-ON CONFLICT (id) DO NOTHING;
+COMMENT ON TABLE ai_context_history IS
+  'Historique complet du contexte de chaque tâche AI — permet la mémoire cumulative entre tâches d''un même projet';
