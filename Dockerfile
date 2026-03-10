@@ -59,8 +59,11 @@ RUN chown -R appuser:appgroup /app/backend
 COPY --from=frontend-builder /frontend/dist /usr/share/nginx/html
 
 # ── Nginx : remplacer la config par défaut par la nôtre ─────────────────────────
-RUN rm -f /etc/nginx/conf.d/default.conf
-COPY nginx.conf /etc/nginx/conf.d/app.conf
+# Alpine nginx charge /etc/nginx/http.d/ **à l'intérieur** du bloc http
+# Les directives server doivent donc y être placées
+RUN rm -f /etc/nginx/http.d/default.conf
+COPY nginx-upstream.conf /etc/nginx/http.d/upstream.conf
+COPY nginx.conf /etc/nginx/http.d/app.conf
 
 # ── Supervisord : configuration du gestionnaire de processus ────────────────────
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf

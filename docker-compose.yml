@@ -266,7 +266,38 @@ services:
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-80}:8080"
+    environment:
+      NODE_ENV:     production
+      PORT:         4000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET:   ${JWT_SECRET:?JWT_SECRET manquant dans .env}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80}
+      # ── Admin bootstrap ───────────────────────────────────────────────────
+      ADMIN_EMAIL:    ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-Admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD manquant dans .env}
+      # ── Agents ───────────────────────────────────────────────────────────
+      CLAUDE_CODE_MODEL:  ${CLAUDE_CODE_MODEL:-qwen3.5:0.8b-q8_0}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-http://ollama:11434/v1}
+      # ── Intégrations externes ─────────────────────────────────────────────
+      LLM_PROVIDER:              ${LLM_PROVIDER:-ollama}
+      OPENAI_API_KEY:            ${OPENAI_API_KEY:-}
+      GOOGLE_GENAI_API_KEY:      ${GOOGLE_GENAI_API_KEY:-}
+      CONFLUENCE_PERSONAL_TOKEN: ${CONFLUENCE_PERSONAL_TOKEN:-}
+      JIRA_PERSONAL_TOKEN:       ${JIRA_PERSONAL_TOKEN:-}
+      CONFLUENCE_URL:            ${CONFLUENCE_URL:-}
+      JIRA_URL:                  ${JIRA_URL:-}
+      JIRA_EMAIL:                ${JIRA_EMAIL:-}
+      # ── Git ───────────────────────────────────────────────────────────────
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_ORG: ${GITHUB_ORG:-}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-AI Agent}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-ai-agent@atlassian-clone.local}
     depends_on:
+      postgres:
+        condition: service_healthy
       backend:
         condition: service_healthy
     healthcheck:
